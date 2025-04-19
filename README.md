@@ -43,7 +43,8 @@
 - **灵活时效**：支持设置内容过期时间
 - **访问控制**：可限制最大查看次数
 - **个性化**：自定义分享链接及备注
-- **多格式导出**：支持 PDF、Markdown、HTML 导出
+- **支持文本 Raw 直链**：类似 gihub 的 Raw 直链，用于 yaml 配置文件来启动的服务
+- **多格式导出**：支持 PDF、Markdown、HTML、PNG 图片、Word 文档 导出
 - **便捷分享**：一键复制分享链接和生成二维码
 - **自动保存**：支持自动保存草稿功能
 
@@ -51,11 +52,12 @@
 
 - **多存储支持**：兼容多种 S3 存储服务 (Cloudflare R2、Backblaze B2、AWS S3 等)
 - **存储配置**：可视化界面配置多个存储空间，灵活切换默认存储源
-- **高效上传**：通过预签名 URL 直接上传至 S3 存储
+- **高效上传**：通过预签名 URL 直接上传至 S3 存储，多文件上传
 - **实时反馈**：上传进度实时显示
 - **自定义限制**：单次上传限制和最大容量限制
 - **元数据管理**：文件备注、密码、过期时间、访问限制
 - **数据分析**：文件访问统计与趋势分析
+- **服务器直传**：支持调接口进行文件上传、下载等操作
 
 ### 🛠 便捷的文件/文本操作
 
@@ -63,6 +65,16 @@
 - **在线预览**：常见文档、图片和媒体文件的在线预览与直链生成
 - **分享工具**：生成短链接和二维码，便于跨平台分享
 - **批量管理**：文件/文本批量操作与显示
+
+### 🔄 WebDAV 和挂载点管理
+
+- **WebDAV 协议支持**：通过标准 WebDAV 协议访问和管理文件系统
+- **网络驱动器挂载**：支持 部分第三方客户端直接挂载
+- **灵活的挂载点**：支持创建多个挂载点，连接不同的存储服务
+- **权限控制**：精细的挂载点访问权限管理
+- **API 密钥集成**：通过 API 密钥授权 WebDAV 访问
+- **大文件支持**：自动使用分片上传机制处理大文件
+- **目录操作**：完整支持目录创建、上传、删除、重命名等操作
 
 ### 🔐 轻量权限管理
 
@@ -448,6 +460,7 @@ networks:
 ```bash
 docker-compose up -d
 ```
+
 **<span style="color:red">⚠️ 安全提示：请在系统初始化后立即修改默认管理员密码（用户名: admin, 密码: admin123）。</span>**
 
 3. 访问服务
@@ -473,7 +486,7 @@ docker-compose up -d
 
 **<span style="color:orange">💡 提示：如果遇到配置变更，可能需要备份数据后修改 docker-compose.yml 文件</span>**
 
-### Nginx 反代示例
+### Nginx 反代示例（仅供参考）
 
 ```nginx
 server {
@@ -492,8 +505,8 @@ server {
     }
 
     # 后端API代理配置
-    location /api/ {
-        proxy_pass http://localhost:8787/;  # Docker后端服务地址
+    location /api {
+        proxy_pass http://localhost:8787;  # Docker后端服务地址
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
 
@@ -501,6 +514,34 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
+    }
+
+    # WebDav 配置
+    location /dav/ {
+        proxy_pass http://localhost:8787/dav/;  # 指向您的后端服务
+
+        # WebDAV 必要头信息
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+        # WebDAV 方法支持
+        proxy_pass_request_headers on;
+
+        # 支持所有WebDAV方法
+        proxy_method $request_method;
+
+        # 必要的头信息处理
+        proxy_set_header Destination $http_destination;
+        proxy_set_header Overwrite $http_overwrite;
+
+        # 处理大文件
+        client_max_body_size 0;
+
+        # 超时设置
+        proxy_connect_timeout 3600s;
+        proxy_send_timeout 3600s;
+        proxy_read_timeout 3600s;
     }
 }
 ```
@@ -533,7 +574,7 @@ server {
     "MaxAgeSeconds": 3600
   }
 ]
-````
+```
 
 ## B2 API 相关获取及跨域配置
 
@@ -556,7 +597,7 @@ b2.exe account authorize   //进行账号登录，根据提示填入之前的 ke
 b2.exe bucket get <bucketName> //你可以执行获取bucket信息，<bucketName>换成桶名字
 ```
 
-这里由于我是 windows 配置
+windows 配置，采用“.\b2-windows.exe xxx”，
 所以在对应 cli 的 exe 文件夹中 cmd 输入，python 的 cli 也同理：
 
 ```cmd
@@ -568,6 +609,100 @@ b2.exe bucket update <bucketName> allPrivate --cors-rules "[{\"corsRuleName\":\"
 5. 已完成跨域配置
 
 ## 更多 S3 相关配置待续......
+
+</details>
+
+<details>
+<summary><b>👉 WebDAV配置详细指南</b></summary>
+
+## WebDAV 配置与使用详解
+
+CloudPaste 提供简易的 WebDAV 协议支持，允许您将存储空间挂载为网络驱动器，便于直接通过文件管理器访问和管理文件。
+
+### WebDAV 服务基本信息
+
+- **WebDAV 基础 URL**: `https://你的后端域名/dav`
+- **支持的认证方式**:
+   - Basic 认证（用户名+密码）
+- **支持的权限类型**:
+   - 管理员账户 - 拥有完整操作权限
+   - API 密钥 - 需启用挂载权限（mount_permission）
+
+### 权限配置
+
+#### 1. 管理员账户访问
+
+使用管理员账户和密码直接访问 WebDAV 服务：
+
+- **用户名**: 管理员用户名
+- **密码**: 管理员密码
+
+#### 2. API 密钥访问（推荐）
+
+为更安全的访问方式，建议创建专用 API 密钥：
+
+1. 登录管理界面
+2. 导航至"API 密钥管理"
+3. 创建新 API 密钥，**确保启用"挂载权限"**
+4. 使用方式：
+   - **用户名**: API 密钥值
+   - **密码**: 与用户名相同的 API 密钥值
+
+### NGINX 反向代理配置
+
+如果使用 NGINX 作为反向代理，需要添加特定的 WebDAV 配置以确保所有 WebDAV 方法正常工作：
+
+```nginx
+# WebDAV 配置
+location /dav {
+    proxy_pass http://localhost:8787;  # 指向您的后端服务
+
+    # WebDAV 必要头信息
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+    # WebDAV 方法支持
+    proxy_pass_request_headers on;
+
+    # 支持所有WebDAV方法
+    proxy_method $request_method;
+
+    # 必要的头信息处理
+    proxy_set_header Destination $http_destination;
+    proxy_set_header Overwrite $http_overwrite;
+
+    # 处理大文件
+    client_max_body_size 0;
+
+    # 超时设置
+    proxy_connect_timeout 3600s;
+    proxy_send_timeout 3600s;
+    proxy_read_timeout 3600s;
+}
+```
+
+### 常见问题解决
+
+1. **连接问题**:
+
+   - 确认 WebDAV URL 格式正确
+   - 验证认证凭据是否有效
+   - 检查 API 密钥是否具有挂载权限
+
+2. **权限错误**:
+
+   - 确认账户具有所需的权限
+   - 管理员账户应有完整权限
+   - API 密钥需特别启用挂载权限
+
+3. **⚠️⚠️ Webdav 上传问题**:
+
+   - 预签名上传模式下，需要注意配置对应的 S3 存储的跨域配置
+   - WebDav 的自动推荐模式下，小于 10MB 文件采用直传模式，10-50MB 文件采用分片上传模式，大于 50MB 文件采用预签名上传模式。
+   - 关于 Cloudflare 的 Worker 上传限制，建议使用预签名或直传模式，不要使用分片
+   - 对于 Docker 部署，只需注意 nginx 代理配置，上传模式任意。
+   - Windows，Raidrive 等客户端挂载暂不支持拖动上传
 
 </details>
 
@@ -594,6 +729,8 @@ b2.exe bucket update <bucketName> allPrivate --cors-rules "[{\"corsRuleName\":\"
 ### API 文档
 
 [API 文档](Api-doc.md)
+
+[服务器 文件直传 API 文档](Api-s3_direct.md) - 服务器 文件直传接口详细说明
 
 ### 本地开发设置
 

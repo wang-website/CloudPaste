@@ -43,7 +43,8 @@
 - **Flexible Expiration**: Support for setting content expiration times
 - **Access Control**: Ability to limit maximum view count
 - **Customization**: Personalized share links and notes
-- **Multi-format Export**: Support for PDF, Markdown, and HTML export
+- **Support for Raw text direct links**: Similar to GitHub's Raw direct links, used for services launched via YAML configuration files
+- **Multi-format export**: Supports export to PDF, Markdown, HTML, PNG images, and Word documents
 - **Easy Sharing**: One-click link copying and QR code generation
 - **Auto-save**: Support for automatic draft saving
 
@@ -56,6 +57,7 @@
 - **Custom Limits**: Single upload limits and maximum capacity restrictions
 - **Metadata Management**: File notes, passwords, expiration times, access restrictions
 - **Data Analysis**: File access statistics and trend analysis
+- **Direct Server Transfer**: Supports calling APIs for file upload, download, and other operations.
 
 ### 🛠 Convenient File/Text Operations
 
@@ -63,6 +65,16 @@
 - **Online Preview**: Online preview and direct link generation for common documents, images, and media files
 - **Sharing Tools**: Generation of short links and QR codes for cross-platform sharing
 - **Batch Management**: Batch operations and display for files/text
+
+### 🔄 WebDAV and Mount Point Management
+
+- **WebDAV Protocol Support**: Access and manage the file system via standard WebDAV protocol
+- **Network Drive Mounting**: Support for mounting by some third-party clients
+- **Flexible Mount Points**: Support for creating multiple mount points connected to different storage services
+- **Permission Control**: Fine-grained mount point access permission management
+- **API Key Integration**: WebDAV access authorization through API keys
+- **Large File Support**: Automatic use of multipart upload mechanism for large files
+- **Directory Operations**: Full support for directory creation, upload, deletion, renaming, and other operations
 
 ### 🔐 Lightweight Permission Management
 
@@ -493,8 +505,8 @@ server {
     }
 
     # Backend API proxy configuration
-    location /api/ {
-        proxy_pass http://localhost:8787/;  # Docker backend service address
+    location /api {
+        proxy_pass http://localhost:8787;  # Docker backend service address
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
 
@@ -502,6 +514,34 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
+    }
+
+    # WebDAV Configuration
+    location /dav {
+        proxy_pass http://localhost:8787/dav;  # Points to your backend service
+
+        # WebDAV necessary headers
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+        # WebDAV method support
+        proxy_pass_request_headers on;
+
+        # Support all WebDAV methods
+        proxy_method $request_method;
+
+        # Necessary header processing
+        proxy_set_header Destination $http_destination;
+        proxy_set_header Overwrite $http_overwrite;
+
+        # Handle large files
+        client_max_body_size 0;
+
+        # Timeout settings
+        proxy_connect_timeout 3600s;
+        proxy_send_timeout 3600s;
+        proxy_read_timeout 3600s;
     }
 }
 ```
@@ -557,7 +597,8 @@ b2.exe account authorize   //Log in to your account, following prompts to enter 
 b2.exe bucket get <bucketName> //You can execute to get bucket information, replace <bucketName> with your bucket name
 ```
 
-Since I'm configuring on Windows, I input in CMD in the corresponding CLI's exe folder; Python CLI would be similar:
+Windows configuration, Use ".\b2-windows.exe xxx", 
+Python CLI would be similar:
 
 ```cmd
 b2.exe bucket update <bucketName> allPrivate --cors-rules "[{\"corsRuleName\":\"CloudPaste\",\"allowedOrigins\":[\"*\"],\"allowedHeaders\":[\"*\"],\"allowedOperations\":[\"b2_upload_file\",\"b2_download_file_by_name\",\"b2_download_file_by_id\",\"s3_head\",\"s3_get\",\"s3_put\",\"s3_post\",\"s3_delete\"],\"exposeHeaders\":[\"Etag\",\"content-length\",\"content-type\",\"x-bz-content-sha1\"],\"maxAgeSeconds\":3600}]"
@@ -568,6 +609,100 @@ Replace <bucketName> with your bucket name. For allowedOrigins in the cross-orig
 5. Cross-origin configuration complete
 
 ## More S3-related configurations to come......
+
+</details>
+
+<details>
+<summary><b>👉 WebDAV Configuration Guide</b></summary>
+
+## WebDAV Configuration and Usage Guide
+
+CloudPaste provides simple WebDAV protocol support, allowing you to mount storage spaces as network drives for convenient access and management of files directly through file managers.
+
+### WebDAV Service Basic Information
+
+- **WebDAV Base URL**: `https://your-backend-domain/dav`
+- **Supported Authentication Methods**:
+   - Basic Authentication (username+password)
+- **Supported Permission Types**:
+   - Administrator accounts - Full operation permissions
+   - API keys - Requires enabled mount permission (mount_permission)
+
+### Permission Configuration
+
+#### 1. Administrator Account Access
+
+Use administrator account and password to directly access the WebDAV service:
+
+- **Username**: Administrator username
+- **Password**: Administrator password
+
+#### 2. API Key Access (Recommended)
+
+For a more secure access method, it is recommended to create a dedicated API key:
+
+1. Log in to the management interface
+2. Navigate to "API Key Management"
+3. Create a new API key, **ensure "Mount Permission" is enabled**
+4. Usage method:
+   - **Username**: API key value
+   - **Password**: The same API key value as the username
+
+### NGINX Reverse Proxy Configuration
+
+If using NGINX as a reverse proxy, specific WebDAV configuration needs to be added to ensure all WebDAV methods work properly:
+
+```nginx
+# WebDAV Configuration
+location /dav {
+    proxy_pass http://localhost:8787;  # Points to your backend service
+
+    # WebDAV necessary headers
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+    # WebDAV method support
+    proxy_pass_request_headers on;
+
+    # Support all WebDAV methods
+    proxy_method $request_method;
+
+    # Necessary header processing
+    proxy_set_header Destination $http_destination;
+    proxy_set_header Overwrite $http_overwrite;
+
+    # Handle large files
+    client_max_body_size 0;
+
+    # Timeout settings
+    proxy_connect_timeout 3600s;
+    proxy_send_timeout 3600s;
+    proxy_read_timeout 3600s;
+}
+```
+
+### Common Issues and Solutions
+
+1. **Connection Problems**:
+
+   - Confirm the WebDAV URL format is correct
+   - Verify that authentication credentials are valid
+   - Check if the API key has mount permission
+
+2. **Permission Errors**:
+
+   - Confirm the account has the required permissions
+   - Administrator accounts should have full permissions
+   - API keys need to have mount permission specifically enabled
+
+3. **⚠️⚠️ WebDAV Upload Issues**:
+
+   - In presigned upload mode, attention needs to be paid to the cross-origin configuration of the corresponding S3 storage
+   - In WebDAV's automatic recommendation mode, files smaller than 10MB use direct upload mode, files between 10-50MB use multipart upload mode, and files larger than 50MB use presigned upload mode
+   - Regarding Cloudflare Worker upload limitations, it is recommended to use presigned or direct upload mode, and avoid using multipart uploads
+   - For Docker deployments, just pay attention to the nginx proxy configuration, any upload mode is acceptable
+   - Windows, Raidrive and other clients do not yet support drag-and-drop uploads, everything else works
 
 </details>
 
@@ -594,6 +729,8 @@ Replace <bucketName> with your bucket name. For allowedOrigins in the cross-orig
 ### API Documentation
 
 [API Documentation](Api-doc.md)
+
+[Server Direct File Upload API Documentation](Api-s3_direct.md) - Detailed description of the server direct file upload interface
 
 ### Local Development Setup
 

@@ -2,45 +2,45 @@
   <div class="file-uploader">
     <!-- 文件拖放区域 -->
     <div
-        class="drop-zone mb-4 border-2 border-dashed rounded-lg flex flex-col items-center justify-center py-6 px-4 cursor-pointer transition-all duration-300"
-        :class="[
+      class="drop-zone mb-4 border-2 border-dashed rounded-lg flex flex-col items-center justify-center py-6 px-4 cursor-pointer transition-all duration-300"
+      :class="[
         darkMode ? 'border-gray-600 hover:border-gray-500 bg-gray-800/30' : 'border-gray-300 hover:border-gray-400 bg-gray-50',
         isDragging ? (darkMode ? 'border-blue-500 bg-blue-500/10 pulsing-border' : 'border-blue-500 bg-blue-50 pulsing-border') : '',
       ]"
-        @dragenter.prevent="onDragOver"
-        @dragover.prevent="onDragOver"
-        @dragleave.prevent="onDragLeave"
-        @drop.prevent="onDrop"
-        @click="triggerFileInput"
+      @dragenter.prevent="onDragOver"
+      @dragover.prevent="onDragOver"
+      @dragleave.prevent="onDragLeave"
+      @drop.prevent="onDrop"
+      @click="triggerFileInput"
     >
       <div class="icon-container mb-3">
         <svg
-            xmlns="http://www.w3.org/2000/svg"
-            class="h-12 w-12 transition-colors duration-300"
-            :class="[darkMode ? 'text-gray-400' : 'text-gray-500', isDragging ? (darkMode ? 'text-blue-400' : 'text-blue-500') : '']"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
+          xmlns="http://www.w3.org/2000/svg"
+          class="h-12 w-12 transition-colors duration-300"
+          :class="[darkMode ? 'text-gray-400' : 'text-gray-500', isDragging ? (darkMode ? 'text-blue-400' : 'text-blue-500') : '']"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
         >
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
         </svg>
       </div>
       <div class="text-center">
         <p
-            class="text-base font-medium transition-colors duration-300"
-            :class="[darkMode ? 'text-gray-300' : 'text-gray-700', isDragging ? (darkMode ? 'text-blue-300' : 'text-blue-700') : '']"
+          class="text-base font-medium transition-colors duration-300"
+          :class="[darkMode ? 'text-gray-300' : 'text-gray-700', isDragging ? (darkMode ? 'text-blue-300' : 'text-blue-700') : '']"
         >
           {{ isDragging ? t("file.drag") : t("file.select") }}
         </p>
         <p
-            class="text-sm mt-1 transition-colors duration-300"
-            :class="[darkMode ? 'text-gray-400' : 'text-gray-500', isDragging ? (darkMode ? 'text-blue-300/80' : 'text-blue-600/80') : '']"
+          class="text-sm mt-1 transition-colors duration-300"
+          :class="[darkMode ? 'text-gray-400' : 'text-gray-500', isDragging ? (darkMode ? 'text-blue-300/80' : 'text-blue-600/80') : '']"
         >
           {{ t("file.maxSizeExceeded", { size: formatMaxFileSize() }) }}
         </p>
         <p
-            class="text-sm mt-1 transition-colors duration-300"
-            :class="[darkMode ? 'text-gray-400' : 'text-gray-500', isDragging ? (darkMode ? 'text-blue-300/80' : 'text-blue-600/80') : '']"
+          class="text-sm mt-1 transition-colors duration-300"
+          :class="[darkMode ? 'text-gray-400' : 'text-gray-500', isDragging ? (darkMode ? 'text-blue-300/80' : 'text-blue-600/80') : '']"
         >
           <span class="px-1.5 py-0.5 rounded text-xs" :class="darkMode ? 'bg-gray-700 text-blue-300' : 'bg-gray-200 text-blue-600'">
             {{ t("file.multipleFilesSupported") }}
@@ -57,17 +57,17 @@
           {{ t("file.selectedFiles", { count: selectedFiles.length }) }}
         </h3>
         <button
-            type="button"
-            @click="clearAllFiles"
-            class="text-sm px-2 py-1 rounded transition-colors flex items-center"
-            :class="darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-300' : 'bg-gray-100 hover:bg-gray-200 text-gray-600'"
+          type="button"
+          @click="clearAllFiles"
+          class="text-sm px-2 py-1 rounded transition-colors flex items-center"
+          :class="darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-300' : 'bg-gray-100 hover:bg-gray-200 text-gray-600'"
         >
           <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
             />
           </svg>
           {{ t("file.clearAll") }}
@@ -75,10 +75,10 @@
       </div>
       <div class="files-list max-h-60 overflow-y-auto">
         <div
-            v-for="(file, index) in selectedFiles"
-            :key="index"
-            class="selected-file mb-3 flex items-center p-3 rounded-md"
-            :class="[
+          v-for="(file, index) in selectedFiles"
+          :key="index"
+          class="selected-file mb-3 flex items-center p-3 rounded-md"
+          :class="[
             darkMode ? 'bg-gray-700/50' : 'bg-gray-100',
             fileItems[index]?.status === 'error' ? (darkMode ? 'border-l-4 border-red-500' : 'border-l-4 border-red-500') : '',
             fileItems[index]?.status === 'success' ? (darkMode ? 'border-l-4 border-green-500' : 'border-l-4 border-green-500') : '',
@@ -88,10 +88,10 @@
           <div class="file-icon mr-3">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" :class="darkMode ? 'text-gray-300' : 'text-gray-600'" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
               />
             </svg>
           </div>
@@ -106,9 +106,9 @@
 
               <!-- 文件状态显示 -->
               <span
-                  v-if="fileItems[index]"
-                  class="text-xs ml-2 px-2 py-0.5 rounded-full"
-                  :class="{
+                v-if="fileItems[index]"
+                class="text-xs ml-2 px-2 py-0.5 rounded-full"
+                :class="{
                   'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300': fileItems[index].status === 'pending',
                   'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300': fileItems[index].status === 'uploading',
                   'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300': fileItems[index].status === 'success',
@@ -117,14 +117,14 @@
               >
                 {{
                   fileItems[index].status === "pending"
-                      ? t("file.pending")
-                      : fileItems[index].status === "uploading"
-                          ? `${fileItems[index].progress}%`
-                          : fileItems[index].status === "success"
-                              ? t("file.success")
-                              : fileItems[index].status === "error"
-                                  ? t("file.error")
-                                  : ""
+                    ? t("file.pending")
+                    : fileItems[index].status === "uploading"
+                    ? `${fileItems[index].progress}%`
+                    : fileItems[index].status === "success"
+                    ? t("file.success")
+                    : fileItems[index].status === "error"
+                    ? t("file.error")
+                    : ""
                 }}
               </span>
             </div>
@@ -132,37 +132,51 @@
             <!-- 单个文件进度条 -->
             <div v-if="fileItems[index]?.status === 'uploading'" class="w-full bg-gray-200 rounded-full h-1.5 mt-1 dark:bg-gray-700">
               <div
-                  class="h-1.5 rounded-full transition-all duration-200"
-                  :class="fileItems[index].progress >= 95 ? 'bg-green-500' : 'bg-blue-500'"
-                  :style="{ width: `${fileItems[index].progress}%` }"
+                class="h-1.5 rounded-full transition-all duration-200"
+                :class="fileItems[index].progress >= 95 ? 'bg-green-500' : 'bg-blue-500'"
+                :style="{ width: `${fileItems[index].progress}%` }"
               ></div>
             </div>
           </div>
+          <!-- 取消上传按钮，仅在上传状态显示 -->
+          <button
+            v-if="fileItems[index]?.status === 'uploading'"
+            type="button"
+            @click="cancelSingleUpload(index)"
+            class="p-1 rounded-full hover:bg-opacity-20 transition-colors mr-1"
+            :class="darkMode ? 'hover:bg-red-900/60 text-gray-400 hover:text-red-300' : 'hover:bg-red-100 text-gray-500 hover:text-red-500'"
+            :title="t('file.cancelUpload')"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19V5M5 12l7-7 7 7" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4L20 20" stroke="red" />
+            </svg>
+          </button>
           <!-- 重试按钮，仅在错误状态显示 -->
           <button
-              v-if="fileItems[index]?.status === 'error'"
-              type="button"
-              @click="retryUpload(index)"
-              class="p-1 rounded-full hover:bg-opacity-20 transition-colors mr-1"
-              :class="darkMode ? 'hover:bg-gray-600 text-gray-400' : 'hover:bg-gray-200 text-gray-500'"
-              :title="t('file.retry')"
+            v-if="fileItems[index]?.status === 'error'"
+            type="button"
+            @click="retryUpload(index)"
+            class="p-1 rounded-full hover:bg-opacity-20 transition-colors mr-1"
+            :class="darkMode ? 'hover:bg-gray-600 text-gray-400' : 'hover:bg-gray-200 text-gray-500'"
+            :title="t('file.retry')"
           >
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
               />
             </svg>
           </button>
           <button
-              type="button"
-              @click="clearSelectedFile(index)"
-              class="p-1 rounded-full hover:bg-opacity-20 transition-colors"
-              :class="darkMode ? 'hover:bg-gray-600 text-gray-400' : 'hover:bg-gray-200 text-gray-500'"
-              :title="t('file.clearSelected')"
-              :disabled="fileItems[index]?.status === 'uploading'"
+            type="button"
+            @click="clearSelectedFile(index)"
+            class="p-1 rounded-full hover:bg-opacity-20 transition-colors"
+            :class="darkMode ? 'hover:bg-gray-600 text-gray-400' : 'hover:bg-gray-200 text-gray-500'"
+            :title="t('file.clearSelected')"
+            :disabled="fileItems[index]?.status === 'uploading'"
           >
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -183,27 +197,27 @@
               <label class="form-label text-sm font-medium mb-1.5" :class="darkMode ? 'text-gray-300' : 'text-gray-700'">{{ t("file.storage") }}</label>
               <div class="relative">
                 <select
-                    v-model="formData.s3_config_id"
-                    class="form-input w-full rounded-md shadow-sm focus:ring-2 focus:ring-offset-1 focus:border-transparent appearance-none"
-                    :class="[
+                  v-model="formData.s3_config_id"
+                  class="form-input w-full rounded-md shadow-sm focus:ring-2 focus:ring-offset-1 focus:border-transparent appearance-none"
+                  :class="[
                     darkMode
                       ? 'bg-gray-700 border-gray-600 text-white focus:ring-blue-600 focus:ring-offset-gray-800'
                       : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500 focus:ring-offset-white',
                   ]"
-                    :disabled="!s3Configs.length || loading || isUploading"
-                    required
+                  :disabled="!s3Configs.length || loading || isUploading"
+                  required
                 >
                   <option value="" disabled selected>{{ s3Configs.length ? t("file.selectStorage") : t("file.noStorage") }}</option>
                   <option v-for="config in s3Configs" :key="config.id" :value="config.id">{{ config.name }} ({{ config.provider_type }})</option>
                 </select>
                 <div class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
                   <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      class="h-5 w-5"
-                      :class="darkMode ? 'text-gray-400' : 'text-gray-500'"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
+                    xmlns="http://www.w3.org/2000/svg"
+                    class="h-5 w-5"
+                    :class="darkMode ? 'text-gray-400' : 'text-gray-500'"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
                   >
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
                   </svg>
@@ -215,16 +229,16 @@
             <div class="form-group flex flex-col">
               <label class="form-label text-sm font-medium mb-1.5" :class="darkMode ? 'text-gray-300' : 'text-gray-700'">{{ t("file.path") }}</label>
               <input
-                  type="text"
-                  v-model="formData.path"
-                  class="form-input w-full rounded-md shadow-sm focus:ring-2 focus:ring-offset-1 focus:border-transparent"
-                  :class="[
+                type="text"
+                v-model="formData.path"
+                class="form-input w-full rounded-md shadow-sm focus:ring-2 focus:ring-offset-1 focus:border-transparent"
+                :class="[
                   darkMode
                     ? 'bg-gray-700 border-gray-600 text-white focus:ring-blue-600 focus:ring-offset-gray-800'
                     : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500 focus:ring-offset-white',
                 ]"
-                  :placeholder="t('file.pathPlaceholder')"
-                  :disabled="isUploading"
+                :placeholder="t('file.pathPlaceholder')"
+                :disabled="isUploading"
               />
             </div>
           </div>
@@ -242,16 +256,16 @@
             <div class="form-group flex flex-col">
               <label class="form-label text-sm font-medium mb-1.5" :class="darkMode ? 'text-gray-300' : 'text-gray-700'">{{ t("file.remark") }}</label>
               <input
-                  type="text"
-                  v-model="formData.remark"
-                  class="form-input w-full rounded-md shadow-sm focus:ring-2 focus:ring-offset-1 focus:border-transparent"
-                  :class="[
+                type="text"
+                v-model="formData.remark"
+                class="form-input w-full rounded-md shadow-sm focus:ring-2 focus:ring-offset-1 focus:border-transparent"
+                :class="[
                   darkMode
                     ? 'bg-gray-700 border-gray-600 text-white focus:ring-blue-600 focus:ring-offset-gray-800'
                     : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500 focus:ring-offset-white',
                 ]"
-                  :placeholder="t('file.remarkPlaceholder')"
-                  :disabled="isUploading"
+                :placeholder="t('file.remarkPlaceholder')"
+                :disabled="isUploading"
               />
             </div>
 
@@ -259,18 +273,18 @@
             <div class="form-group flex flex-col">
               <label class="form-label text-sm font-medium mb-1.5" :class="darkMode ? 'text-gray-300' : 'text-gray-700'">{{ t("file.customLink") }}</label>
               <input
-                  type="text"
-                  v-model="formData.slug"
-                  class="form-input w-full rounded-md shadow-sm focus:ring-2 focus:ring-offset-1 focus:border-transparent"
-                  :class="[
+                type="text"
+                v-model="formData.slug"
+                class="form-input w-full rounded-md shadow-sm focus:ring-2 focus:ring-offset-1 focus:border-transparent"
+                :class="[
                   darkMode
                     ? 'bg-gray-700 border-gray-600 text-white focus:ring-blue-600 focus:ring-offset-gray-800'
                     : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500 focus:ring-offset-white',
                   slugError ? (darkMode ? 'border-red-500' : 'border-red-600') : '',
                 ]"
-                  :placeholder="t('file.customLinkPlaceholder')"
-                  :disabled="isUploading"
-                  @input="validateCustomLink"
+                :placeholder="t('file.customLinkPlaceholder')"
+                :disabled="isUploading"
+                @input="validateCustomLink"
               />
               <p v-if="slugError" class="mt-1 text-sm text-red-600 dark:text-red-400">{{ slugError }}</p>
               <p v-else class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t("file.onlyAllowedChars") }}</p>
@@ -280,16 +294,16 @@
             <div class="form-group flex flex-col">
               <label class="form-label text-sm font-medium mb-1.5" :class="darkMode ? 'text-gray-300' : 'text-gray-700'">{{ t("file.passwordProtection") }}</label>
               <input
-                  type="text"
-                  v-model="formData.password"
-                  class="form-input w-full rounded-md shadow-sm focus:ring-2 focus:ring-offset-1 focus:border-transparent"
-                  :class="[
+                type="text"
+                v-model="formData.password"
+                class="form-input w-full rounded-md shadow-sm focus:ring-2 focus:ring-offset-1 focus:border-transparent"
+                :class="[
                   darkMode
                     ? 'bg-gray-700 border-gray-600 text-white focus:ring-blue-600 focus:ring-offset-gray-800'
                     : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500 focus:ring-offset-white',
                 ]"
-                  :placeholder="t('file.passwordPlaceholder')"
-                  :disabled="isUploading"
+                :placeholder="t('file.passwordPlaceholder')"
+                :disabled="isUploading"
               />
             </div>
 
@@ -297,14 +311,14 @@
             <div class="form-group flex flex-col">
               <label class="form-label text-sm font-medium mb-1.5" :class="darkMode ? 'text-gray-300' : 'text-gray-700'">{{ t("file.expireTime") }}</label>
               <select
-                  v-model="formData.expires_in"
-                  class="form-input w-full rounded-md shadow-sm focus:ring-2 focus:ring-offset-1 focus:border-transparent"
-                  :class="[
+                v-model="formData.expires_in"
+                class="form-input w-full rounded-md shadow-sm focus:ring-2 focus:ring-offset-1 focus:border-transparent"
+                :class="[
                   darkMode
                     ? 'bg-gray-700 border-gray-600 text-white focus:ring-blue-600 focus:ring-offset-gray-800'
                     : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500 focus:ring-offset-white',
                 ]"
-                  :disabled="isUploading"
+                :disabled="isUploading"
               >
                 <option value="1">{{ t("file.expireOptions.hour1") }}</option>
                 <option value="24">{{ t("file.expireOptions.day1") }}</option>
@@ -318,20 +332,20 @@
             <div class="form-group flex flex-col">
               <label class="form-label text-sm font-medium mb-1.5" :class="darkMode ? 'text-gray-300' : 'text-gray-700'">{{ t("file.maxViews") }}</label>
               <input
-                  type="number"
-                  v-model.number="formData.max_views"
-                  min="0"
-                  step="1"
-                  pattern="\d*"
-                  class="form-input w-full rounded-md shadow-sm focus:ring-2 focus:ring-offset-1 focus:border-transparent"
-                  :class="[
+                type="number"
+                v-model.number="formData.max_views"
+                min="0"
+                step="1"
+                pattern="\d*"
+                class="form-input w-full rounded-md shadow-sm focus:ring-2 focus:ring-offset-1 focus:border-transparent"
+                :class="[
                   darkMode
                     ? 'bg-gray-700 border-gray-600 text-white focus:ring-blue-600 focus:ring-offset-gray-800'
                     : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-500 focus:ring-offset-white',
                 ]"
-                  :placeholder="t('file.maxViewsPlaceholder')"
-                  :disabled="isUploading"
-                  @input="validateMaxViews"
+                :placeholder="t('file.maxViewsPlaceholder')"
+                :disabled="isUploading"
+                @input="validateMaxViews"
               />
             </div>
           </div>
@@ -349,9 +363,9 @@
             </div>
             <div class="w-full bg-gray-200 rounded-full h-2.5 dark:bg-gray-700 overflow-hidden">
               <div
-                  class="h-2.5 rounded-full transition-all duration-200 ease-out relative overflow-hidden"
-                  :class="totalProgress >= 95 ? 'bg-green-600' : 'bg-blue-600'"
-                  :style="{ width: `${totalProgress}%` }"
+                class="h-2.5 rounded-full transition-all duration-200 ease-out relative overflow-hidden"
+                :class="totalProgress >= 95 ? 'bg-green-600' : 'bg-blue-600'"
+                :style="{ width: `${totalProgress}%` }"
               >
                 <div class="progress-stripes absolute inset-0 w-full h-full" :class="totalProgress < 100 ? 'animate-progress-stripes' : ''"></div>
               </div>
@@ -361,10 +375,10 @@
           <!-- 表单按钮 -->
           <div class="submit-section mt-6 flex flex-row items-center gap-3">
             <button
-                type="submit"
-                :disabled="selectedFiles.length === 0 || !formData.s3_config_id || isUploading || loading"
-                class="btn-primary px-4 py-2 rounded-md font-medium focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors flex items-center justify-center min-w-[120px]"
-                :class="[
+              type="submit"
+              :disabled="selectedFiles.length === 0 || !formData.s3_config_id || isUploading || loading"
+              class="btn-primary px-4 py-2 rounded-md font-medium focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors flex items-center justify-center min-w-[120px]"
+              :class="[
                 selectedFiles.length === 0 || !formData.s3_config_id || isUploading || loading
                   ? darkMode
                     ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
@@ -377,9 +391,9 @@
               <svg v-if="isUploading" class="animate-spin -ml-1 mr-2 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                 <path
-                    class="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  class="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                 ></path>
               </svg>
               {{ isUploading ? t("file.loading") : t("file.upload") }}
@@ -387,11 +401,11 @@
 
             <!-- 将取消按钮放在上传按钮右侧 -->
             <button
-                v-if="isUploading"
-                type="button"
-                @click="cancelUpload"
-                class="px-4 py-2 rounded-md font-medium focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors flex items-center justify-center border"
-                :class="
+              v-if="isUploading"
+              type="button"
+              @click="cancelUpload"
+              class="px-4 py-2 rounded-md font-medium focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors flex items-center justify-center border"
+              :class="
                 darkMode
                   ? 'bg-gray-700 border-gray-600 text-gray-300 hover:bg-red-900/60 hover:text-red-200 hover:border-red-800 focus:ring-gray-500 focus:ring-offset-gray-800'
                   : 'bg-gray-100 border-gray-300 text-gray-700 hover:bg-red-50 hover:text-red-600 hover:border-red-300 focus:ring-gray-300 focus:ring-offset-white'
@@ -410,7 +424,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, defineProps, defineEmits, getCurrentInstance, onMounted, watch } from "vue";
+import { ref, reactive, defineProps, defineEmits, getCurrentInstance, onMounted, onUnmounted, watch } from "vue";
 import { api } from "../../api";
 import { API_BASE_URL } from "../../api/config"; // 导入API_BASE_URL
 import { directUploadFile } from "../../api/fileService"; // 导入新的直接上传函数
@@ -438,7 +452,7 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(["upload-success", "upload-error"]);
+const emit = defineEmits(["upload-success", "upload-error", "refresh-files"]);
 
 // 最大文件大小限制(MB)
 const maxFileSizeMB = ref(100); // 默认值
@@ -475,7 +489,7 @@ const formData = reactive({
 // 当前上传文件的ID
 const currentFileId = ref(null);
 
-// 组件挂载时获取最大上传大小
+// 组件挂载时获取最大上传大小并添加粘贴事件监听
 onMounted(async () => {
   try {
     const size = await getMaxUploadSize();
@@ -484,25 +498,71 @@ onMounted(async () => {
     console.error("获取最大上传大小失败:", error);
     // 失败时保持默认值
   }
+
+  // 添加粘贴事件监听
+  document.addEventListener("paste", handlePaste);
 });
+
+// 组件卸载时移除粘贴事件监听
+onUnmounted(() => {
+  document.removeEventListener("paste", handlePaste);
+});
+
+// 处理粘贴事件
+const handlePaste = (event) => {
+  if (event.clipboardData && event.clipboardData.files.length > 0) {
+    event.preventDefault();
+
+    // 处理所有粘贴的文件
+    Array.from(event.clipboardData.files).forEach((file) => {
+      // 验证文件大小是否超过限制
+      if (file.size > maxFileSizeMB.value * 1024 * 1024) {
+        message.value = {
+          type: "error",
+          content: t("file.maxSizeExceeded", { size: maxFileSizeMB.value }),
+        };
+        // 触发错误事件，让父组件处理消息显示
+        emit("upload-error", new Error(t("file.maxSizeExceeded", { size: formatMaxFileSize() })));
+        return;
+      }
+
+      // 检查文件是否已经在列表中（基于名称和大小）
+      const isFileAlreadyAdded = selectedFiles.value.some((existingFile) => existingFile.name === file.name && existingFile.size === file.size);
+
+      if (!isFileAlreadyAdded) {
+        selectedFiles.value.push(file);
+
+        // 初始化文件项状态
+        fileItems.value.push({
+          file,
+          progress: 0,
+          status: "pending", // pending, uploading, success, error
+          message: "",
+          fileId: null,
+          xhr: null,
+        });
+      }
+    });
+  }
+};
 
 // 监听s3Configs变化，自动选择默认配置
 watch(
-    () => props.s3Configs,
-    (configs) => {
-      if (configs && configs.length > 0) {
-        // 查找默认配置
-        const defaultConfig = configs.find((config) => config.is_default);
-        if (defaultConfig) {
-          // 使用默认配置的ID
-          formData.s3_config_id = defaultConfig.id;
-        } else if (!formData.s3_config_id && configs.length > 0) {
-          // 如果没有默认配置且当前未选择配置，则选择第一个
-          formData.s3_config_id = configs[0].id;
-        }
+  () => props.s3Configs,
+  (configs) => {
+    if (configs && configs.length > 0) {
+      // 查找默认配置
+      const defaultConfig = configs.find((config) => config.is_default);
+      if (defaultConfig) {
+        // 使用默认配置的ID
+        formData.s3_config_id = defaultConfig.id;
+      } else if (!formData.s3_config_id && configs.length > 0) {
+        // 如果没有默认配置且当前未选择配置，则选择第一个
+        formData.s3_config_id = configs[0].id;
       }
-    },
-    { immediate: true } // 页面加载时立即执行
+    }
+  },
+  { immediate: true } // 页面加载时立即执行
 );
 
 /**
@@ -648,9 +708,9 @@ const clearSelectedFile = (index) => {
 const clearAllFiles = () => {
   // 过滤出非上传中的文件索引
   const indicesToRemove = fileItems.value
-      .map((item, index) => (item.status !== "uploading" ? index : -1))
-      .filter((index) => index !== -1)
-      .sort((a, b) => b - a); // 倒序排列以便从后向前删除
+    .map((item, index) => (item.status !== "uploading" ? index : -1))
+    .filter((index) => index !== -1)
+    .sort((a, b) => b - a); // 倒序排列以便从后向前删除
 
   // 从后向前删除文件
   for (const index of indicesToRemove) {
@@ -684,30 +744,35 @@ const formatFileSize = (bytes) => {
 // 取消上传
 const cancelUpload = () => {
   if (isUploading.value) {
-    // 如果有正在上传的文件
-    if (currentUploadIndex.value >= 0 && currentUploadIndex.value < fileItems.value.length) {
-      const fileItem = fileItems.value[currentUploadIndex.value];
+    // 取消所有待上传和正在上传的文件
+    for (let i = 0; i < fileItems.value.length; i++) {
+      const fileItem = fileItems.value[i];
 
-      // 如果有活动的XHR请求，取消它
-      if (fileItem.xhr) {
-        fileItem.xhr.abort();
+      // 只处理"正在上传"或"等待上传"的文件
+      if (fileItem.status === "uploading" || fileItem.status === "pending") {
+        // 如果有活动的XHR请求，取消它
+        if (fileItem.xhr) {
+          fileItem.xhr.abort();
+        }
+
+        // 更新文件状态为取消
         fileItem.status = "error";
         fileItem.message = t("file.cancelMessage");
-      }
 
-      // 如果已获取了文件ID，则删除相应的文件记录
-      if (fileItem.fileId) {
-        // 根据用户身份选择合适的删除API
-        const deleteApi = props.isAdmin ? deleteFile : deleteUserFile;
+        // 如果已获取了文件ID，则删除相应的文件记录
+        if (fileItem.fileId) {
+          // 根据用户身份选择合适的删除API
+          const deleteApi = props.isAdmin ? deleteFile : deleteUserFile;
 
-        // 删除文件记录
-        deleteApi(fileItem.fileId)
+          // 删除文件记录
+          deleteApi(fileItem.fileId)
             .then(() => {
-              console.log("已成功删除被取消的文件记录");
+              console.log("已成功删除被取消的文件记录", fileItem.fileId);
             })
             .catch((error) => {
               console.error("删除被取消的文件记录失败:", error);
             });
+        }
       }
     }
 
@@ -820,6 +885,12 @@ const submitUpload = async () => {
 
   // 顺序上传每个文件
   for (let i = 0; i < selectedFiles.value.length; i++) {
+    // 检查上传是否被取消，如果已取消则立即退出循环
+    if (!isUploading.value) {
+      console.log("上传已被取消，停止继续上传");
+      break;
+    }
+
     // 跳过已上传成功的文件
     if (fileItems.value[i].status === "success") {
       continue;
@@ -839,54 +910,54 @@ const submitUpload = async () => {
 
       // 使用直接上传到S3的方法
       const response = await directUploadFile(
-          file,
-          {
-            s3_config_id: formData.s3_config_id,
-            slug: fileSlug,
-            path: formData.path || "",
-            remark: formData.remark || "",
-            password: formData.password || "",
-            expires_in: formData.expires_in || "0",
-            max_views: formData.max_views !== undefined ? Number(formData.max_views) : 0,
-          },
-          // 进度回调函数
-          (progress, loaded, total) => {
-            // 更新当前文件进度
-            fileItem.progress = progress;
+        file,
+        {
+          s3_config_id: formData.s3_config_id,
+          slug: fileSlug,
+          path: formData.path || "",
+          remark: formData.remark || "",
+          password: formData.password || "",
+          expires_in: formData.expires_in || "0",
+          max_views: formData.max_views !== undefined ? Number(formData.max_views) : 0,
+        },
+        // 进度回调函数
+        (progress, loaded, total) => {
+          // 更新当前文件进度
+          fileItem.progress = progress;
 
-            // 更新整体进度
-            const totalSize = selectedFiles.value.reduce((sum, f) => sum + f.size, 0);
-            const completedSize = selectedFiles.value.filter((_, idx) => idx < i || fileItems.value[idx].status === "success").reduce((sum, f) => sum + f.size, 0);
+          // 更新整体进度
+          const totalSize = selectedFiles.value.reduce((sum, f) => sum + f.size, 0);
+          const completedSize = selectedFiles.value.filter((_, idx) => idx < i || fileItems.value[idx].status === "success").reduce((sum, f) => sum + f.size, 0);
 
-            const currentProgress = (loaded / total) * file.size;
-            totalProgress.value = Math.round(((completedSize + currentProgress) / totalSize) * 100);
+          const currentProgress = (loaded / total) * file.size;
+          totalProgress.value = Math.round(((completedSize + currentProgress) / totalSize) * 100);
 
-            // 计算上传速度
-            const now = Date.now();
-            const timeElapsed = (now - lastTime.value) / 1000; // 转换为秒
+          // 计算上传速度
+          const now = Date.now();
+          const timeElapsed = (now - lastTime.value) / 1000; // 转换为秒
 
-            if (timeElapsed > 0.5) {
-              // 每0.5秒更新一次速度
-              const loadedChange = loaded - lastLoaded.value; // 这段时间内上传的字节数
-              const speed = loadedChange / timeElapsed; // 字节/秒
+          if (timeElapsed > 0.5) {
+            // 每0.5秒更新一次速度
+            const loadedChange = loaded - lastLoaded.value; // 这段时间内上传的字节数
+            const speed = loadedChange / timeElapsed; // 字节/秒
 
-              uploadSpeed.value = formatSpeed(speed);
+            uploadSpeed.value = formatSpeed(speed);
 
-              // 更新上次加载值和时间
-              lastLoaded.value = loaded;
-              lastTime.value = now;
-            }
-          },
-          // 获取XHR实例的回调
-          (xhr) => {
-            activeXhr.value = xhr;
-            fileItem.xhr = xhr;
-          },
-          // 获取文件ID的回调
-          (fileId) => {
-            currentFileId.value = fileId;
-            fileItem.fileId = fileId;
+            // 更新上次加载值和时间
+            lastLoaded.value = loaded;
+            lastTime.value = now;
           }
+        },
+        // 获取XHR实例的回调
+        (xhr) => {
+          activeXhr.value = xhr;
+          fileItem.xhr = xhr;
+        },
+        // 获取文件ID的回调
+        (fileId) => {
+          currentFileId.value = fileId;
+          fileItem.fileId = fileId;
+        }
       );
 
       // 上传成功，更新文件状态
@@ -894,23 +965,29 @@ const submitUpload = async () => {
       fileItem.progress = 100;
 
       uploadResults.push(response);
+
+      // 再次检查上传是否被取消，如果已取消则立即退出循环
+      if (!isUploading.value) {
+        console.log("上传过程中被取消，停止继续上传其他文件");
+        break;
+      }
     } catch (error) {
       console.error(`上传文件 ${file.name} 失败:`, error);
       // 检查是否是链接后缀冲突错误
       const errorMessage = error.message || t("common.unknownError");
       const isSlugConflict =
-          (errorMessage.includes("slug") &&
-              (errorMessage.includes("already exists") || errorMessage.includes("already taken") || errorMessage.includes("duplicate") || errorMessage.includes("conflict"))) ||
-          errorMessage.includes("链接后缀已被占用") ||
-          errorMessage.includes("已存在");
+        (errorMessage.includes("slug") &&
+          (errorMessage.includes("already exists") || errorMessage.includes("already taken") || errorMessage.includes("duplicate") || errorMessage.includes("conflict"))) ||
+        errorMessage.includes("链接后缀已被占用") ||
+        errorMessage.includes("已存在");
 
       // 检查是否是存储空间不足错误
       const isInsufficientStorage =
-          errorMessage.includes("存储空间不足") ||
-          errorMessage.includes("insufficient storage") ||
-          errorMessage.includes("超过剩余空间") ||
-          errorMessage.includes("exceeds") ||
-          (errorMessage.includes("storage") && (errorMessage.includes("limit") || errorMessage.includes("full") || errorMessage.includes("quota")));
+        errorMessage.includes("存储空间不足") ||
+        errorMessage.includes("insufficient storage") ||
+        errorMessage.includes("超过剩余空间") ||
+        errorMessage.includes("exceeds") ||
+        (errorMessage.includes("storage") && (errorMessage.includes("limit") || errorMessage.includes("full") || errorMessage.includes("quota")));
 
       // 更新文件状态为错误
       fileItem.status = "error";
@@ -930,6 +1007,12 @@ const submitUpload = async () => {
         isSlugConflict: isSlugConflict,
         isInsufficientStorage: isInsufficientStorage,
       });
+
+      // 文件上传失败后也检查上传是否被取消
+      if (!isUploading.value) {
+        console.log("上传过程中被取消，停止继续上传其他文件");
+        break;
+      }
     }
   }
 
@@ -998,6 +1081,9 @@ const submitUpload = async () => {
     // 成功事件
     emit("upload-success", uploadResults);
 
+    // 触发刷新文件列表事件
+    emit("refresh-files");
+
     // 重置表单数据
     formData.slug = "";
     formData.remark = "";
@@ -1006,9 +1092,9 @@ const submitUpload = async () => {
 
   // 清除已上传成功的文件
   const successfulIndices = fileItems.value
-      .map((item, index) => (item.status === "success" ? index : -1))
-      .filter((index) => index !== -1)
-      .sort((a, b) => b - a); // 倒序排列以便从后向前删除
+    .map((item, index) => (item.status === "success" ? index : -1))
+    .filter((index) => index !== -1)
+    .sort((a, b) => b - a); // 倒序排列以便从后向前删除
 
   // 是否全部文件都上传成功
   const allSuccess = successfulIndices.length === selectedFiles.value.length;
@@ -1042,7 +1128,7 @@ const formatSpeed = (bytesPerSecond) => {
 const processInsufficientStorageError = (errorMessage) => {
   // 检查是否是存储空间不足的错误
   const isInsufficientStorage =
-      errorMessage.includes("存储空间不足") || errorMessage.includes("insufficient storage") || errorMessage.includes("超过剩余空间") || errorMessage.includes("exceeds");
+    errorMessage.includes("存储空间不足") || errorMessage.includes("insufficient storage") || errorMessage.includes("超过剩余空间") || errorMessage.includes("exceeds");
 
   if (!isInsufficientStorage) {
     return errorMessage;
@@ -1103,47 +1189,47 @@ const retryUpload = async (index) => {
 
     // 使用现有的上传函数进行上传
     const response = await directUploadFile(
-        file,
-        {
-          s3_config_id: formData.s3_config_id,
-          slug: fileSlug,
-          path: formData.path || "",
-          remark: formData.remark || "",
-          password: formData.password || "",
-          expires_in: formData.expires_in || "0",
-          max_views: formData.max_views !== undefined ? Number(formData.max_views) : 0,
-        },
-        // 进度回调函数
-        (progress, loaded, total) => {
-          // 更新当前文件进度
-          fileItem.progress = progress;
+      file,
+      {
+        s3_config_id: formData.s3_config_id,
+        slug: fileSlug,
+        path: formData.path || "",
+        remark: formData.remark || "",
+        password: formData.password || "",
+        expires_in: formData.expires_in || "0",
+        max_views: formData.max_views !== undefined ? Number(formData.max_views) : 0,
+      },
+      // 进度回调函数
+      (progress, loaded, total) => {
+        // 更新当前文件进度
+        fileItem.progress = progress;
 
-          // 计算上传速度
-          const now = Date.now();
-          const timeElapsed = (now - lastTime.value) / 1000; // 转换为秒
+        // 计算上传速度
+        const now = Date.now();
+        const timeElapsed = (now - lastTime.value) / 1000; // 转换为秒
 
-          if (timeElapsed > 0.5) {
-            // 每0.5秒更新一次速度
-            const loadedChange = loaded - lastLoaded.value; // 这段时间内上传的字节数
-            const speed = loadedChange / timeElapsed; // 字节/秒
+        if (timeElapsed > 0.5) {
+          // 每0.5秒更新一次速度
+          const loadedChange = loaded - lastLoaded.value; // 这段时间内上传的字节数
+          const speed = loadedChange / timeElapsed; // 字节/秒
 
-            uploadSpeed.value = formatSpeed(speed);
+          uploadSpeed.value = formatSpeed(speed);
 
-            // 更新上次加载值和时间
-            lastLoaded.value = loaded;
-            lastTime.value = now;
-          }
-        },
-        // 获取XHR实例的回调
-        (xhr) => {
-          activeXhr.value = xhr;
-          fileItem.xhr = xhr;
-        },
-        // 获取文件ID的回调
-        (fileId) => {
-          currentFileId.value = fileId;
-          fileItem.fileId = fileId;
+          // 更新上次加载值和时间
+          lastLoaded.value = loaded;
+          lastTime.value = now;
         }
+      },
+      // 获取XHR实例的回调
+      (xhr) => {
+        activeXhr.value = xhr;
+        fileItem.xhr = xhr;
+      },
+      // 获取文件ID的回调
+      (fileId) => {
+        currentFileId.value = fileId;
+        fileItem.fileId = fileId;
+      }
     );
 
     // 上传成功，更新文件状态
@@ -1155,6 +1241,9 @@ const retryUpload = async (index) => {
       type: "success",
       content: t("file.retrySuccessful"),
     };
+
+    // 触发刷新文件列表事件
+    emit("refresh-files");
 
     // 延迟从列表中移除成功上传的文件
     setTimeout(() => {
@@ -1170,18 +1259,18 @@ const retryUpload = async (index) => {
     // 检查是否是链接后缀冲突错误
     const errorMessage = error.message || t("common.unknownError");
     const isSlugConflict =
-        (errorMessage.includes("slug") &&
-            (errorMessage.includes("already exists") || errorMessage.includes("already taken") || errorMessage.includes("duplicate") || errorMessage.includes("conflict"))) ||
-        errorMessage.includes("链接后缀已被占用") ||
-        errorMessage.includes("已存在");
+      (errorMessage.includes("slug") &&
+        (errorMessage.includes("already exists") || errorMessage.includes("already taken") || errorMessage.includes("duplicate") || errorMessage.includes("conflict"))) ||
+      errorMessage.includes("链接后缀已被占用") ||
+      errorMessage.includes("已存在");
 
     // 检查是否是存储空间不足错误
     const isInsufficientStorage =
-        errorMessage.includes("存储空间不足") ||
-        errorMessage.includes("insufficient storage") ||
-        errorMessage.includes("超过剩余空间") ||
-        errorMessage.includes("exceeds") ||
-        (errorMessage.includes("storage") && (errorMessage.includes("limit") || errorMessage.includes("full") || errorMessage.includes("quota")));
+      errorMessage.includes("存储空间不足") ||
+      errorMessage.includes("insufficient storage") ||
+      errorMessage.includes("超过剩余空间") ||
+      errorMessage.includes("exceeds") ||
+      (errorMessage.includes("storage") && (errorMessage.includes("limit") || errorMessage.includes("full") || errorMessage.includes("quota")));
 
     // 更新文件状态为错误
     fileItem.status = "error";
@@ -1199,9 +1288,68 @@ const retryUpload = async (index) => {
     // 触发错误事件
     emit("upload-error", error);
   } finally {
+    // 重试逻辑更简单，总是设置isUploading.value为false
+    // 因为retryUpload通常是单独操作，而不是批量上传的一部分
     isUploading.value = false;
     currentUploadIndex.value = -1;
   }
+};
+
+// 取消单个文件上传
+const cancelSingleUpload = (index) => {
+  if (index < 0 || index >= fileItems.value.length) return;
+
+  const fileItem = fileItems.value[index];
+
+  // 只处理"正在上传"或"等待上传"的文件
+  if (fileItem.status !== "uploading" && fileItem.status !== "pending") return;
+
+  // 如果有活动的XHR请求，取消它
+  if (fileItem.xhr) {
+    fileItem.xhr.abort();
+  }
+
+  // 更新文件状态为取消
+  fileItem.status = "error";
+  fileItem.message = t("file.cancelMessage");
+
+  // 如果已获取了文件ID，则删除相应的文件记录
+  if (fileItem.fileId) {
+    // 根据用户身份选择合适的删除API
+    const deleteApi = props.isAdmin ? deleteFile : deleteUserFile;
+
+    // 删除文件记录
+    deleteApi(fileItem.fileId)
+      .then(() => {
+        console.log("已成功删除被取消的文件记录", fileItem.fileId);
+      })
+      .catch((error) => {
+        console.error("删除被取消的文件记录失败:", error);
+      });
+  }
+
+  // 如果这是当前正在上传的文件，且没有其他文件正在上传，则重置上传状态
+  if (currentUploadIndex.value === index) {
+    // 检查是否还有其他正在上传的文件
+    const stillUploading = fileItems.value.some((item, idx) => idx !== index && item.status === "uploading");
+
+    if (!stillUploading) {
+      // 不设置isUploading.value为false，以确保上传循环继续处理队列中的后续文件
+      // 但重置其他状态，以确保UI显示正确
+      uploadProgress.value = 0;
+      totalProgress.value = 0;
+      uploadSpeed.value = "";
+
+      // 不重置currentUploadIndex，让submitUpload函数的循环继续处理
+      // currentUploadIndex.value = -1;
+    }
+  }
+
+  // 显示提示消息
+  message.value = {
+    type: "warning",
+    content: t("file.singleFileCancelMessage"),
+  };
 };
 </script>
 
@@ -1248,14 +1396,14 @@ const retryUpload = async (index) => {
 /* 进度条条纹样式 */
 .progress-stripes {
   background-image: linear-gradient(
-      45deg,
-      rgba(255, 255, 255, 0.15) 25%,
-      transparent 25%,
-      transparent 50%,
-      rgba(255, 255, 255, 0.15) 50%,
-      rgba(255, 255, 255, 0.15) 75%,
-      transparent 75%,
-      transparent
+    45deg,
+    rgba(255, 255, 255, 0.15) 25%,
+    transparent 25%,
+    transparent 50%,
+    rgba(255, 255, 255, 0.15) 50%,
+    rgba(255, 255, 255, 0.15) 75%,
+    transparent 75%,
+    transparent
   );
   background-size: 30px 30px;
 }
