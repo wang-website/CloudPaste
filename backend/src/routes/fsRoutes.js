@@ -11,8 +11,9 @@ import { HTTPException } from "hono/http-exception";
 import { listDirectory, getFileInfo, downloadFile, createDirectory, uploadFile, removeItem, renameItem, previewFile, batchRemoveItems } from "../services/fsService.js";
 import { findMountPointByPath } from "../webdav/utils/webdavUtils.js";
 import { generatePresignedPutUrl, buildS3Url } from "../utils/s3Utils.js";
-import { directoryCacheManager } from "../utils/DirectoryCache.js";
+import { directoryCacheManager, clearCacheForFilePath } from "../utils/DirectoryCache.js";
 import { handleInitMultipartUpload, handleUploadPart, handleCompleteMultipartUpload, handleAbortMultipartUpload } from "../controllers/multipartUploadController.js";
+import { getLocalTimeString } from "../utils/common.js";
 
 // 创建文件系统路由处理程序
 const fsRoutes = new Hono();
@@ -579,21 +580,21 @@ fsRoutes.post("/api/admin/fs/multipart/init", authMiddleware, async (c) => {
     setCorsHeaders(c);
     if (error instanceof HTTPException) {
       return c.json(
-        {
-          success: false,
-          message: error.message,
-          code: error.status,
-        },
-        error.status
+          {
+            success: false,
+            message: error.message,
+            code: error.status,
+          },
+          error.status
       );
     }
     return c.json(
-      {
-        success: false,
-        message: error.message || "初始化分片上传失败",
-        code: ApiStatus.INTERNAL_ERROR,
-      },
-      ApiStatus.INTERNAL_ERROR
+        {
+          success: false,
+          message: error.message || "初始化分片上传失败",
+          code: ApiStatus.INTERNAL_ERROR,
+        },
+        ApiStatus.INTERNAL_ERROR
     );
   }
 });
@@ -614,22 +615,22 @@ fsRoutes.post("/api/admin/fs/multipart/part", authMiddleware, async (c) => {
     // 返回适当的错误响应
     if (error instanceof HTTPException) {
       return c.json(
-        {
-          success: false,
-          message: error.message,
-          code: error.status,
-        },
-        error.status
+          {
+            success: false,
+            message: error.message,
+            code: error.status,
+          },
+          error.status
       );
     }
 
     return c.json(
-      {
-        success: false,
-        message: error.message || "上传分片失败",
-        code: ApiStatus.INTERNAL_ERROR,
-      },
-      ApiStatus.INTERNAL_ERROR
+        {
+          success: false,
+          message: error.message || "上传分片失败",
+          code: ApiStatus.INTERNAL_ERROR,
+        },
+        ApiStatus.INTERNAL_ERROR
     );
   }
 });
@@ -643,21 +644,21 @@ fsRoutes.post("/api/admin/fs/multipart/complete", authMiddleware, async (c) => {
     setCorsHeaders(c);
     if (error instanceof HTTPException) {
       return c.json(
-        {
-          success: false,
-          message: error.message,
-          code: error.status,
-        },
-        error.status
+          {
+            success: false,
+            message: error.message,
+            code: error.status,
+          },
+          error.status
       );
     }
     return c.json(
-      {
-        success: false,
-        message: error.message || "完成分片上传失败",
-        code: ApiStatus.INTERNAL_ERROR,
-      },
-      ApiStatus.INTERNAL_ERROR
+        {
+          success: false,
+          message: error.message || "完成分片上传失败",
+          code: ApiStatus.INTERNAL_ERROR,
+        },
+        ApiStatus.INTERNAL_ERROR
     );
   }
 });
@@ -671,21 +672,21 @@ fsRoutes.post("/api/admin/fs/multipart/abort", authMiddleware, async (c) => {
     setCorsHeaders(c);
     if (error instanceof HTTPException) {
       return c.json(
-        {
-          success: false,
-          message: error.message,
-          code: error.status,
-        },
-        error.status
+          {
+            success: false,
+            message: error.message,
+            code: error.status,
+          },
+          error.status
       );
     }
     return c.json(
-      {
-        success: false,
-        message: error.message || "中止分片上传失败",
-        code: ApiStatus.INTERNAL_ERROR,
-      },
-      ApiStatus.INTERNAL_ERROR
+        {
+          success: false,
+          message: error.message || "中止分片上传失败",
+          code: ApiStatus.INTERNAL_ERROR,
+        },
+        ApiStatus.INTERNAL_ERROR
     );
   }
 });
@@ -715,21 +716,21 @@ fsRoutes.post("/api/user/fs/multipart/init", apiKeyFileMiddleware, async (c) => 
     setCorsHeaders(c);
     if (error instanceof HTTPException) {
       return c.json(
-        {
-          success: false,
-          message: error.message,
-          code: error.status,
-        },
-        error.status
+          {
+            success: false,
+            message: error.message,
+            code: error.status,
+          },
+          error.status
       );
     }
     return c.json(
-      {
-        success: false,
-        message: error.message || "初始化分片上传失败",
-        code: ApiStatus.INTERNAL_ERROR,
-      },
-      ApiStatus.INTERNAL_ERROR
+        {
+          success: false,
+          message: error.message || "初始化分片上传失败",
+          code: ApiStatus.INTERNAL_ERROR,
+        },
+        ApiStatus.INTERNAL_ERROR
     );
   }
 });
@@ -750,22 +751,22 @@ fsRoutes.post("/api/user/fs/multipart/part", apiKeyFileMiddleware, async (c) => 
     // 返回适当的错误响应
     if (error instanceof HTTPException) {
       return c.json(
-        {
-          success: false,
-          message: error.message,
-          code: error.status,
-        },
-        error.status
+          {
+            success: false,
+            message: error.message,
+            code: error.status,
+          },
+          error.status
       );
     }
 
     return c.json(
-      {
-        success: false,
-        message: error.message || "上传分片失败",
-        code: ApiStatus.INTERNAL_ERROR,
-      },
-      ApiStatus.INTERNAL_ERROR
+        {
+          success: false,
+          message: error.message || "上传分片失败",
+          code: ApiStatus.INTERNAL_ERROR,
+        },
+        ApiStatus.INTERNAL_ERROR
     );
   }
 });
@@ -779,21 +780,21 @@ fsRoutes.post("/api/user/fs/multipart/complete", apiKeyFileMiddleware, async (c)
     setCorsHeaders(c);
     if (error instanceof HTTPException) {
       return c.json(
-        {
-          success: false,
-          message: error.message,
-          code: error.status,
-        },
-        error.status
+          {
+            success: false,
+            message: error.message,
+            code: error.status,
+          },
+          error.status
       );
     }
     return c.json(
-      {
-        success: false,
-        message: error.message || "完成分片上传失败",
-        code: ApiStatus.INTERNAL_ERROR,
-      },
-      ApiStatus.INTERNAL_ERROR
+        {
+          success: false,
+          message: error.message || "完成分片上传失败",
+          code: ApiStatus.INTERNAL_ERROR,
+        },
+        ApiStatus.INTERNAL_ERROR
     );
   }
 });
@@ -807,21 +808,21 @@ fsRoutes.post("/api/user/fs/multipart/abort", apiKeyFileMiddleware, async (c) =>
     setCorsHeaders(c);
     if (error instanceof HTTPException) {
       return c.json(
-        {
-          success: false,
-          message: error.message,
-          code: error.status,
-        },
-        error.status
+          {
+            success: false,
+            message: error.message,
+            code: error.status,
+          },
+          error.status
       );
     }
     return c.json(
-      {
-        success: false,
-        message: error.message || "中止分片上传失败",
-        code: ApiStatus.INTERNAL_ERROR,
-      },
-      ApiStatus.INTERNAL_ERROR
+        {
+          success: false,
+          message: error.message || "中止分片上传失败",
+          code: ApiStatus.INTERNAL_ERROR,
+        },
+        ApiStatus.INTERNAL_ERROR
     );
   }
 });
@@ -1038,7 +1039,7 @@ fsRoutes.post("/api/user/fs/presign", apiKeyFileMiddleware, async (c) => {
   }
 });
 
-// 提交预签名URL上传成功 - 管理员版本
+// 提交预签名URL上传完成 - 管理员版本
 fsRoutes.post("/api/admin/fs/presign/commit", authMiddleware, async (c) => {
   try {
     // 获取必要的上下文
@@ -1083,17 +1084,20 @@ fsRoutes.post("/api/admin/fs/presign/commit", authMiddleware, async (c) => {
     // 生成slug（使用文件ID的前8位作为slug）
     const fileSlug = "M-" + fileId.substring(0, 5);
 
+    // 获取当前时间
+    const now = getLocalTimeString();
+
     // 记录文件上传成功
     await db
-      .prepare(
-        `
+        .prepare(
+            `
       INSERT INTO files (
-        id, filename, storage_path, s3_url, mimetype, size, s3_config_id, slug, etag, created_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        id, filename, storage_path, s3_url, mimetype, size, s3_config_id, slug, etag, created_by, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
-      )
-      .bind(fileId, fileName, s3Path, s3Url, contentType, fileSize, s3ConfigId, fileSlug, etag, adminId)
-      .run();
+        )
+        .bind(fileId, fileName, s3Path, s3Url, contentType, fileSize, s3ConfigId, fileSlug, etag, adminId, now, now)
+        .run();
 
     // 提取父路径
     const parentPath = targetPath.substring(0, targetPath.lastIndexOf("/") + 1);
@@ -1104,6 +1108,15 @@ fsRoutes.post("/api/admin/fs/presign/commit", authMiddleware, async (c) => {
       console.log(`缓存已刷新（包含所有父路径）：挂载点=${mountId}, 路径=${parentPath}, 清理了${invalidatedCount}个缓存条目`);
     } else {
       console.warn(`跳过缓存刷新，参数不完整: mountId=${mountId}, parentPath=${parentPath}`);
+    }
+
+    // 调用clearCacheForFilePath函数，更彻底地清除文件相关缓存
+    try {
+      await clearCacheForFilePath(db, s3Path, s3ConfigId);
+      console.log(`已调用clearCacheForFilePath清除文件相关缓存 - 路径=${s3Path}, S3配置ID=${s3ConfigId}`);
+    } catch (cacheError) {
+      // 不让缓存清除错误影响上传流程
+      console.warn(`清除文件缓存时出错: ${cacheError.message}`);
     }
 
     return c.json({
@@ -1127,7 +1140,7 @@ fsRoutes.post("/api/admin/fs/presign/commit", authMiddleware, async (c) => {
   }
 });
 
-// 提交预签名URL上传成功 - API密钥用户版本
+// 提交预签名URL上传完成 - API密钥用户版本
 fsRoutes.post("/api/user/fs/presign/commit", apiKeyFileMiddleware, async (c) => {
   try {
     // 获取必要的上下文
@@ -1172,17 +1185,20 @@ fsRoutes.post("/api/user/fs/presign/commit", apiKeyFileMiddleware, async (c) => 
     // 生成slug（使用文件ID的前8位作为slug）
     const fileSlug = "M-" + fileId.substring(0, 5);
 
+    // 获取当前时间
+    const now = getLocalTimeString();
+
     // 记录文件上传成功
     await db
-      .prepare(
-        `
+        .prepare(
+            `
       INSERT INTO files (
-        id, filename, storage_path, s3_url, mimetype, size, s3_config_id, slug, etag, created_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        id, filename, storage_path, s3_url, mimetype, size, s3_config_id, slug, etag, created_by, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
-      )
-      .bind(fileId, fileName, s3Path, s3Url, contentType, fileSize, s3ConfigId, fileSlug, etag, `apikey:${apiKeyId}`)
-      .run();
+        )
+        .bind(fileId, fileName, s3Path, s3Url, contentType, fileSize, s3ConfigId, fileSlug, etag, `apikey:${apiKeyId}`, now, now)
+        .run();
 
     // 提取父路径
     const parentPath = targetPath.substring(0, targetPath.lastIndexOf("/") + 1);
@@ -1193,6 +1209,15 @@ fsRoutes.post("/api/user/fs/presign/commit", apiKeyFileMiddleware, async (c) => 
       console.log(`缓存已刷新（包含所有父路径）：挂载点=${mountId}, 路径=${parentPath}, 清理了${invalidatedCount}个缓存条目`);
     } else {
       console.warn(`跳过缓存刷新，参数不完整: mountId=${mountId}, parentPath=${parentPath}`);
+    }
+
+    // 调用clearCacheForFilePath函数，更彻底地清除文件相关缓存
+    try {
+      await clearCacheForFilePath(db, s3Path, s3ConfigId);
+      console.log(`已调用clearCacheForFilePath清除文件相关缓存 - 路径=${s3Path}, S3配置ID=${s3ConfigId}`);
+    } catch (cacheError) {
+      // 不让缓存清除错误影响上传流程
+      console.warn(`清除文件缓存时出错: ${cacheError.message}`);
     }
 
     return c.json({
