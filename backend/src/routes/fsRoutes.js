@@ -1,1244 +1,350 @@
-/**
- * 文件系统API路由
- * 提供RESTful API接口用于前端访问和操作挂载的文件系统
- */
 import { Hono } from "hono";
-import { authMiddleware } from "../middlewares/authMiddleware.js";
-import { apiKeyFileMiddleware } from "../middlewares/apiKeyMiddleware.js";
-import { createErrorResponse, generateFileId } from "../utils/common.js";
-import { ApiStatus } from "../constants/index.js";
-import { HTTPException } from "hono/http-exception";
-import { listDirectory, getFileInfo, downloadFile, createDirectory, uploadFile, removeItem, renameItem, previewFile, batchRemoveItems } from "../services/fsService.js";
-import { findMountPointByPath } from "../webdav/utils/webdavUtils.js";
-import { generatePresignedPutUrl, buildS3Url } from "../utils/s3Utils.js";
-import { directoryCacheManager, clearCacheForFilePath } from "../utils/DirectoryCache.js";
-import { handleInitMultipartUpload, handleUploadPart, handleCompleteMultipartUpload, handleAbortMultipartUpload } from "../controllers/multipartUploadController.js";
-import { getLocalTimeString } from "../utils/common.js";
+import { ApiStatus, UserType } from "../constants/index.js";
+import { AuthenticationError, AuthorizationError, ValidationError } from "../http/errors.js";
+import { usePolicy } from "../security/policies/policies.js";
+import { getStorageConfigByIdForAdmin, getPublicStorageConfigById } from "../services/storageConfigService.js";
+import { getAccessibleMountsForUser } from "../security/helpers/access.js";
+import { ensureRepositoryFactory } from "../utils/repositories.js";
+import { registerBrowseRoutes } from "./fs/browse.js";
+import { registerWriteRoutes } from "./fs/write.js";
+import { registerMultipartRoutes } from "./fs/multipart.js";
+import { registerOpsRoutes } from "./fs/ops.js";
+import { registerSearchShareRoutes } from "./fs/search_share.js";
+import { FsMetaService } from "../services/fsMetaService.js";
+import { encryptValue, decryptValue } from "../utils/crypto.js";
+import { getEncryptionSecret } from "../utils/environmentUtils.js";
+import { createErrorResponse, jsonOk } from "../utils/common.js";
 
-// 创建文件系统路由处理程序
 const fsRoutes = new Hono();
 
+// 路径规范化
+const normalizeFsPath = (path) => {
+  if (!path || path === "/") {
+    return "/";
+  }
+  const trimmed = path.replace(/\/+$/, "") || "/";
+  return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+};
+
 /**
- * 设置CORS标头
- * @param {HonoContext} c - Hono上下文
+ * 解析指定路径的有效 Meta 与密码域信息
+ * @param {D1Database} db
+ * @param {string} rawPath
  */
-function setCorsHeaders(c) {
-  // 获取请求的origin并返回相同的值作为Access-Control-Allow-Origin
-  // 这是为了支持credentials的情况下正确处理CORS
-  const origin = c.req.header("Origin");
-  c.header("Access-Control-Allow-Origin", origin || "*");
+const resolveEffectiveMetaForPath = async (db, rawPath) => {
+  const metaService = new FsMetaService(db);
+  const normalizedPath = normalizeFsPath(rawPath || "/");
+  const meta = await metaService.resolveMetaForPath(normalizedPath);
+  const requiresPassword = Boolean(meta.password);
+  const passwordOwnerPath = meta.password ? meta.passwordOwnerPath || normalizedPath : null;
+  return { meta, normalizedPath, requiresPassword, passwordOwnerPath };
+};
 
-  c.header("Access-Control-Allow-Headers", "Content-Type, Content-Length, Authorization, X-Requested-With");
-  c.header("Access-Control-Expose-Headers", "ETag, Content-Length, Content-Disposition, Access-Control-Allow-Origin");
-  c.header("Access-Control-Allow-Credentials", "true");
-  c.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+/**
+ * 为指定路径和明文密码生成验证结果与 token
+ * - 不负责身份判断，仅基于 fs_meta 的 password 字段工作
+ * @param {D1Database} db
+ * @param {string} rawPath
+ * @param {string} plainPassword
+ * @param {string} encryptionSecret
+ */
+const buildPathPasswordVerification = async (db, rawPath, plainPassword, encryptionSecret) => {
+  const { meta, normalizedPath, requiresPassword, passwordOwnerPath } = await resolveEffectiveMetaForPath(db, rawPath);
 
-  // 对于预览和下载请求，添加一个更长的缓存时间
-  if (c.req.path.includes("/preview") || c.req.path.includes("/download")) {
-    c.header("Access-Control-Max-Age", "3600"); // 1小时
+  // 未配置密码：直接视为不需要路径密码
+  if (!requiresPassword) {
+    return {
+      requiresPassword: false,
+      verified: true,
+      token: null,
+      path: normalizedPath,
+    };
   }
-}
 
-// 管理员文件系统访问
-fsRoutes.use("/api/admin/fs/*", authMiddleware);
+  if (!plainPassword || typeof plainPassword !== "string" || !plainPassword.trim()) {
+    return {
+      requiresPassword: true,
+      verified: false,
+      error: "EMPTY_PASSWORD",
+      path: normalizedPath,
+    };
+  }
 
-// API密钥用户文件系统访问
-fsRoutes.use("/api/user/fs/*", apiKeyFileMiddleware);
+  if (plainPassword !== meta.password) {
+    return {
+      requiresPassword: true,
+      verified: false,
+      error: "INVALID_PASSWORD",
+      path: normalizedPath,
+    };
+  }
 
-// 列出目录内容 - 管理员版本
-fsRoutes.get("/api/admin/fs/list", async (c) => {
-  const db = c.env.DB;
-  const path = c.req.query("path") || "/";
-  const adminId = c.get("adminId");
+  // 为后续中间件校验准备的 token 载荷：
+  // - ownerPath: 密码所属路径（密码域）
+  // - passwordVersion: 当前聚合后的密码值（当密码修改时会改变）
+  // - verifiedAt: 签发时间（仅用于调试）
+  const payload = JSON.stringify({
+    ownerPath: passwordOwnerPath || normalizedPath,
+    passwordVersion: meta.password,
+    verifiedAt: new Date().toISOString(),
+  });
+  const token = await encryptValue(payload, encryptionSecret);
 
+  return {
+    requiresPassword: true,
+    verified: true,
+    token,
+    path: passwordOwnerPath || normalizedPath,
+  };
+};
+
+/**
+ * 校验路径密码 token 是否对当前路径仍然有效
+ * - 用于 FS 浏览路由的前置访问控制
+ * @param {D1Database} db
+ * @param {string} rawPath
+ * @param {string|null} token
+ * @param {string} encryptionSecret
+ */
+const verifyPathPasswordToken = async (db, rawPath, token, encryptionSecret) => {
+  const { meta, normalizedPath, requiresPassword, passwordOwnerPath } = await resolveEffectiveMetaForPath(db, rawPath);
+
+  // 当前路径未配置密码：无需 token，直接放行
+  if (!requiresPassword) {
+    return {
+      requiresPassword: false,
+      verified: true,
+    };
+  }
+
+  if (!token || typeof token !== "string") {
+    return {
+      requiresPassword: true,
+      verified: false,
+      error: "MISSING_TOKEN",
+    };
+  }
+
+  let payloadText;
   try {
-    const result = await listDirectory(db, path, adminId, "admin", c.env.ENCRYPTION_SECRET);
-    return c.json({
-      code: ApiStatus.SUCCESS,
-      message: "获取目录列表成功",
-      data: result,
-      success: true,
+    payloadText = await decryptValue(token, encryptionSecret);
+  } catch {
+    return {
+      requiresPassword: true,
+      verified: false,
+      error: "INVALID_TOKEN",
+    };
+  }
+
+  let payload;
+  try {
+    payload = JSON.parse(payloadText);
+  } catch {
+    return {
+      requiresPassword: true,
+      verified: false,
+      error: "INVALID_TOKEN",
+    };
+  }
+
+  if (!payload || typeof payload !== "object") {
+    return {
+      requiresPassword: true,
+      verified: false,
+      error: "INVALID_TOKEN",
+    };
+  }
+
+  // 密码域 ownerPath 必须匹配当前路径的密码 owner
+  if (!payload.ownerPath || normalizeFsPath(payload.ownerPath) !== normalizeFsPath(passwordOwnerPath || normalizedPath)) {
+    return {
+      requiresPassword: true,
+      verified: false,
+      error: "PATH_MISMATCH",
+    };
+  }
+
+  // 当管理员修改了密码时，这里的 passwordVersion 将与当前 meta.password 不一致
+  if (!payload.passwordVersion || payload.passwordVersion !== meta.password) {
+    return {
+      requiresPassword: true,
+      verified: false,
+      error: "PASSWORD_CHANGED",
+    };
+  }
+
+  return {
+    requiresPassword: true,
+    verified: true,
+  };
+};
+
+// 负责把 principal 映射为 legacy FS 服务层仍在使用的 userInfo 结构。
+const unifiedFsAuthMiddleware = async (c, next) => {
+  const principal = c.get("principal");
+
+  if (!principal || principal.type === "anonymous") {
+    throw new AuthenticationError("需要认证访问");
+  }
+
+  if (principal.isAdmin) {
+    c.set("userInfo", {
+      type: UserType.ADMIN,
+      id: principal.id,
+      hasFullAccess: true,
     });
-  } catch (error) {
-    console.error("获取目录列表错误:", error);
-    if (error instanceof HTTPException) {
-      return c.json(createErrorResponse(error.status, error.message), error.status);
-    }
-    return c.json(createErrorResponse(ApiStatus.INTERNAL_ERROR, error.message || "获取目录列表失败"), ApiStatus.INTERNAL_ERROR);
-  }
-});
+  } else if (principal.type === UserType.API_KEY) {
+    const apiKeyInfo = principal.attributes?.keyInfo ?? {
+      id: principal.id,
+      basicPath: principal.attributes?.basicPath ?? "/",
+      permissions: principal.authorities,
+    };
 
-// 列出目录内容 - API密钥用户版本
-fsRoutes.get("/api/user/fs/list", async (c) => {
-  const db = c.env.DB;
-  const path = c.req.query("path") || "/";
-  const apiKeyId = c.get("apiKeyId");
-
-  try {
-    const result = await listDirectory(db, path, apiKeyId, "apiKey", c.env.ENCRYPTION_SECRET);
-    return c.json({
-      code: ApiStatus.SUCCESS,
-      message: "获取目录列表成功",
-      data: result,
-      success: true,
+    c.set("userInfo", {
+      type: UserType.API_KEY,
+      info: apiKeyInfo,
+      hasFullAccess: false,
     });
-  } catch (error) {
-    console.error("获取目录列表错误:", error);
-    if (error instanceof HTTPException) {
-      return c.json(createErrorResponse(error.status, error.message), error.status);
-    }
-    return c.json(createErrorResponse(ApiStatus.INTERNAL_ERROR, error.message || "获取目录列表失败"), ApiStatus.INTERNAL_ERROR);
+  } else {
+    throw new AuthorizationError("不支持的身份类型");
   }
-});
 
-// 获取文件信息 - 管理员版本
-fsRoutes.get("/api/admin/fs/get", async (c) => {
+  await next();
+};
+
+const FS_BASE_PATH = "/api/fs";
+
+const baseFsPolicy = usePolicy("fs.base");
+fsRoutes.use(`${FS_BASE_PATH}/*`, baseFsPolicy, unifiedFsAuthMiddleware);
+
+fsRoutes.use(`${FS_BASE_PATH}/list`, usePolicy("fs.list"));
+fsRoutes.use(`${FS_BASE_PATH}/get`, usePolicy("fs.read"));
+fsRoutes.use(`${FS_BASE_PATH}/download`, usePolicy("fs.read"));
+fsRoutes.use(`${FS_BASE_PATH}/content`, usePolicy("fs.read"));
+fsRoutes.use(`${FS_BASE_PATH}/file-link`, usePolicy("fs.share-link"));
+
+// 目录路径密码校验接口
+fsRoutes.post(`${FS_BASE_PATH}/meta/password/verify`, async (c) => {
   const db = c.env.DB;
-  const path = c.req.query("path");
-  const adminId = c.get("adminId");
 
-  if (!path) {
-    return c.json(createErrorResponse(ApiStatus.BAD_REQUEST, "请提供文件路径"), ApiStatus.BAD_REQUEST);
-  }
-
+  let body;
   try {
-    const result = await getFileInfo(db, path, adminId, "admin", c.env.ENCRYPTION_SECRET);
-    return c.json({
-      code: ApiStatus.SUCCESS,
-      message: "获取文件信息成功",
-      data: result,
-      success: true,
-    });
-  } catch (error) {
-    console.error("获取文件信息错误:", error);
-    if (error instanceof HTTPException) {
-      return c.json(createErrorResponse(error.status, error.message), error.status);
-    }
-    return c.json(createErrorResponse(ApiStatus.INTERNAL_ERROR, error.message || "获取文件信息失败"), ApiStatus.INTERNAL_ERROR);
-  }
-});
-
-// 获取文件信息 - API密钥用户版本
-fsRoutes.get("/api/user/fs/get", async (c) => {
-  const db = c.env.DB;
-  const path = c.req.query("path");
-  const apiKeyId = c.get("apiKeyId");
-
-  if (!path) {
-    return c.json(createErrorResponse(ApiStatus.BAD_REQUEST, "请提供文件路径"), ApiStatus.BAD_REQUEST);
+    body = await c.req.json();
+  } catch {
+    body = null;
   }
 
-  try {
-    const result = await getFileInfo(db, path, apiKeyId, "apiKey", c.env.ENCRYPTION_SECRET);
-    return c.json({
-      code: ApiStatus.SUCCESS,
-      message: "获取文件信息成功",
-      data: result,
-      success: true,
-    });
-  } catch (error) {
-    console.error("获取文件信息错误:", error);
-    if (error instanceof HTTPException) {
-      return c.json(createErrorResponse(error.status, error.message), error.status);
-    }
-    return c.json(createErrorResponse(ApiStatus.INTERNAL_ERROR, error.message || "获取文件信息失败"), ApiStatus.INTERNAL_ERROR);
-  }
-});
+  const rawPath = body?.path ?? "/";
+  const plainPassword = body?.password ?? "";
 
-// 下载文件 - 管理员版本
-fsRoutes.get("/api/admin/fs/download", async (c) => {
-  const db = c.env.DB;
-  const path = c.req.query("path");
-  const adminId = c.get("adminId");
-
-  // 设置CORS头部
-  setCorsHeaders(c);
-
-  if (!path) {
-    return c.json(createErrorResponse(ApiStatus.BAD_REQUEST, "请提供文件路径"), ApiStatus.BAD_REQUEST);
+  if (!rawPath || typeof rawPath !== "string") {
+    throw new ValidationError("请提供有效的路径");
   }
 
-  try {
-    return await downloadFile(db, path, adminId, "admin", c.env.ENCRYPTION_SECRET);
-  } catch (error) {
-    // 确保即使发生错误，也添加CORS头部
-    setCorsHeaders(c);
-    console.error("下载文件错误:", error);
-    if (error instanceof HTTPException) {
-      return c.json(createErrorResponse(error.status, error.message), error.status);
-    }
-    return c.json(createErrorResponse(ApiStatus.INTERNAL_ERROR, error.message || "下载文件失败"), ApiStatus.INTERNAL_ERROR);
-  }
-});
+  const encryptionSecret = getEncryptionSecret(c);
+  const result = await buildPathPasswordVerification(db, rawPath, plainPassword, encryptionSecret);
 
-// 预览文件 - 管理员版本
-fsRoutes.get("/api/admin/fs/preview", async (c) => {
-  const db = c.env.DB;
-  const path = c.req.query("path");
-  const adminId = c.get("adminId");
-
-  // 设置CORS头部
-  setCorsHeaders(c);
-
-  if (!path) {
-    return c.json(createErrorResponse(ApiStatus.BAD_REQUEST, "请提供文件路径"), ApiStatus.BAD_REQUEST);
-  }
-
-  try {
-    return await previewFile(db, path, adminId, "admin", c.env.ENCRYPTION_SECRET);
-  } catch (error) {
-    // 确保即使发生错误，也添加CORS头部
-    setCorsHeaders(c);
-    console.error("预览文件错误:", error);
-    if (error instanceof HTTPException) {
-      return c.json(createErrorResponse(error.status, error.message), error.status);
-    }
-    return c.json(createErrorResponse(ApiStatus.INTERNAL_ERROR, error.message || "预览文件失败"), ApiStatus.INTERNAL_ERROR);
-  }
-});
-
-// 下载文件 - API密钥用户版本
-fsRoutes.get("/api/user/fs/download", async (c) => {
-  const db = c.env.DB;
-  const path = c.req.query("path");
-  const apiKeyId = c.get("apiKeyId");
-
-  // 设置CORS头部
-  setCorsHeaders(c);
-
-  if (!path) {
-    return c.json(createErrorResponse(ApiStatus.BAD_REQUEST, "请提供文件路径"), ApiStatus.BAD_REQUEST);
-  }
-
-  try {
-    return await downloadFile(db, path, apiKeyId, "apiKey", c.env.ENCRYPTION_SECRET);
-  } catch (error) {
-    // 确保即使发生错误，也添加CORS头部
-    setCorsHeaders(c);
-    console.error("下载文件错误:", error);
-    if (error instanceof HTTPException) {
-      return c.json(createErrorResponse(error.status, error.message), error.status);
-    }
-    return c.json(createErrorResponse(ApiStatus.INTERNAL_ERROR, error.message || "下载文件失败"), ApiStatus.INTERNAL_ERROR);
-  }
-});
-
-// 预览文件 - API密钥用户版本
-fsRoutes.get("/api/user/fs/preview", async (c) => {
-  const db = c.env.DB;
-  const path = c.req.query("path");
-  const apiKeyId = c.get("apiKeyId");
-
-  // 设置CORS头部
-  setCorsHeaders(c);
-
-  if (!path) {
-    return c.json(createErrorResponse(ApiStatus.BAD_REQUEST, "请提供文件路径"), ApiStatus.BAD_REQUEST);
-  }
-
-  try {
-    return await previewFile(db, path, apiKeyId, "apiKey", c.env.ENCRYPTION_SECRET);
-  } catch (error) {
-    // 确保即使发生错误，也添加CORS头部
-    setCorsHeaders(c);
-    console.error("预览文件错误:", error);
-    if (error instanceof HTTPException) {
-      return c.json(createErrorResponse(error.status, error.message), error.status);
-    }
-    return c.json(createErrorResponse(ApiStatus.INTERNAL_ERROR, error.message || "预览文件失败"), ApiStatus.INTERNAL_ERROR);
-  }
-});
-
-// 创建目录 - 管理员版本
-fsRoutes.post("/api/admin/fs/mkdir", async (c) => {
-  const db = c.env.DB;
-  const adminId = c.get("adminId");
-  const body = await c.req.json();
-  const path = body.path;
-
-  if (!path) {
-    return c.json(createErrorResponse(ApiStatus.BAD_REQUEST, "请提供目录路径"), ApiStatus.BAD_REQUEST);
-  }
-
-  try {
-    await createDirectory(db, path, adminId, "admin", c.env.ENCRYPTION_SECRET);
-    return c.json({
-      code: ApiStatus.SUCCESS,
-      message: "目录创建成功",
-      success: true,
-    });
-  } catch (error) {
-    console.error("创建目录错误:", error);
-    if (error instanceof HTTPException) {
-      return c.json(createErrorResponse(error.status, error.message), error.status);
-    }
-    return c.json(createErrorResponse(ApiStatus.INTERNAL_ERROR, error.message || "创建目录失败"), ApiStatus.INTERNAL_ERROR);
-  }
-});
-
-// 创建目录 - API密钥用户版本
-fsRoutes.post("/api/user/fs/mkdir", async (c) => {
-  const db = c.env.DB;
-  const apiKeyId = c.get("apiKeyId");
-  const body = await c.req.json();
-  const path = body.path;
-
-  if (!path) {
-    return c.json(createErrorResponse(ApiStatus.BAD_REQUEST, "请提供目录路径"), ApiStatus.BAD_REQUEST);
-  }
-
-  try {
-    await createDirectory(db, path, apiKeyId, "apiKey", c.env.ENCRYPTION_SECRET);
-    return c.json({
-      code: ApiStatus.SUCCESS,
-      message: "目录创建成功",
-      success: true,
-    });
-  } catch (error) {
-    console.error("创建目录错误:", error);
-    if (error instanceof HTTPException) {
-      return c.json(createErrorResponse(error.status, error.message), error.status);
-    }
-    return c.json(createErrorResponse(ApiStatus.INTERNAL_ERROR, error.message || "创建目录失败"), ApiStatus.INTERNAL_ERROR);
-  }
-});
-
-// 上传文件 - 管理员版本
-fsRoutes.post("/api/admin/fs/upload", async (c) => {
-  const db = c.env.DB;
-  const adminId = c.get("adminId");
-
-  try {
-    const formData = await c.req.formData();
-    const file = formData.get("file");
-    const path = formData.get("path");
-    const useMultipart = formData.get("use_multipart") === "true";
-
-    if (!file || !path) {
-      return c.json(createErrorResponse(ApiStatus.BAD_REQUEST, "请提供文件和路径"), ApiStatus.BAD_REQUEST);
-    }
-
-    const result = await uploadFile(db, path, file, adminId, "admin", c.env.ENCRYPTION_SECRET, useMultipart);
-
-    // 如果是分片上传，返回相关信息
-    if (result.useMultipart) {
-      return c.json({
-        code: ApiStatus.SUCCESS,
-        message: "需要使用分片上传",
-        data: result,
-        success: true,
-      });
-    }
-
-    // 常规上传成功
-    return c.json({
-      code: ApiStatus.SUCCESS,
-      message: "文件上传成功",
-      data: result,
-      success: true,
-    });
-  } catch (error) {
-    console.error("上传文件错误:", error);
-    if (error instanceof HTTPException) {
-      return c.json(createErrorResponse(error.status, error.message), error.status);
-    }
-    return c.json(createErrorResponse(ApiStatus.INTERNAL_ERROR, error.message || "上传文件失败"), ApiStatus.INTERNAL_ERROR);
-  }
-});
-
-// 上传文件 - API密钥用户版本
-fsRoutes.post("/api/user/fs/upload", async (c) => {
-  const db = c.env.DB;
-  const apiKeyId = c.get("apiKeyId");
-
-  try {
-    const formData = await c.req.formData();
-    const file = formData.get("file");
-    const path = formData.get("path");
-    const useMultipart = formData.get("use_multipart") === "true";
-
-    if (!file || !path) {
-      return c.json(createErrorResponse(ApiStatus.BAD_REQUEST, "请提供文件和路径"), ApiStatus.BAD_REQUEST);
-    }
-
-    const result = await uploadFile(db, path, file, apiKeyId, "apiKey", c.env.ENCRYPTION_SECRET, useMultipart);
-
-    // 如果是分片上传，返回相关信息
-    if (result.useMultipart) {
-      return c.json({
-        code: ApiStatus.SUCCESS,
-        message: "需要使用分片上传",
-        data: result,
-        success: true,
-      });
-    }
-
-    // 常规上传成功
-    return c.json({
-      code: ApiStatus.SUCCESS,
-      message: "文件上传成功",
-      data: result,
-      success: true,
-    });
-  } catch (error) {
-    console.error("上传文件错误:", error);
-    if (error instanceof HTTPException) {
-      return c.json(createErrorResponse(error.status, error.message), error.status);
-    }
-    return c.json(createErrorResponse(ApiStatus.INTERNAL_ERROR, error.message || "上传文件失败"), ApiStatus.INTERNAL_ERROR);
-  }
-});
-
-// 删除文件或目录 - 管理员版本
-fsRoutes.delete("/api/admin/fs/remove", async (c) => {
-  const db = c.env.DB;
-  const adminId = c.get("adminId");
-  const path = c.req.query("path");
-
-  if (!path) {
-    return c.json(createErrorResponse(ApiStatus.BAD_REQUEST, "请提供路径"), ApiStatus.BAD_REQUEST);
-  }
-
-  try {
-    await removeItem(db, path, adminId, "admin", c.env.ENCRYPTION_SECRET);
-    return c.json({
-      code: ApiStatus.SUCCESS,
-      message: "删除成功",
-      success: true,
-    });
-  } catch (error) {
-    console.error("删除错误:", error);
-    if (error instanceof HTTPException) {
-      return c.json(createErrorResponse(error.status, error.message), error.status);
-    }
-    return c.json(createErrorResponse(ApiStatus.INTERNAL_ERROR, error.message || "删除失败"), ApiStatus.INTERNAL_ERROR);
-  }
-});
-
-// 删除文件或目录 - API密钥用户版本
-fsRoutes.delete("/api/user/fs/remove", async (c) => {
-  const db = c.env.DB;
-  const apiKeyId = c.get("apiKeyId");
-  const path = c.req.query("path");
-
-  if (!path) {
-    return c.json(createErrorResponse(ApiStatus.BAD_REQUEST, "请提供路径"), ApiStatus.BAD_REQUEST);
-  }
-
-  try {
-    await removeItem(db, path, apiKeyId, "apiKey", c.env.ENCRYPTION_SECRET);
-    return c.json({
-      code: ApiStatus.SUCCESS,
-      message: "删除成功",
-      success: true,
-    });
-  } catch (error) {
-    console.error("删除错误:", error);
-    if (error instanceof HTTPException) {
-      return c.json(createErrorResponse(error.status, error.message), error.status);
-    }
-    return c.json(createErrorResponse(ApiStatus.INTERNAL_ERROR, error.message || "删除失败"), ApiStatus.INTERNAL_ERROR);
-  }
-});
-
-// 批量删除文件或目录 - 管理员版本
-fsRoutes.post("/api/admin/fs/batch-remove", async (c) => {
-  const db = c.env.DB;
-  const adminId = c.get("adminId");
-  const body = await c.req.json();
-  const paths = body.paths;
-
-  if (!paths || !Array.isArray(paths) || paths.length === 0) {
-    return c.json(createErrorResponse(ApiStatus.BAD_REQUEST, "请提供有效的路径数组"), ApiStatus.BAD_REQUEST);
-  }
-
-  try {
-    const result = await batchRemoveItems(db, paths, adminId, "admin", c.env.ENCRYPTION_SECRET);
-    return c.json({
-      code: ApiStatus.SUCCESS,
-      message: `批量删除完成，成功: ${result.success}，失败: ${result.failed.length}`,
-      data: result,
-      success: true,
-    });
-  } catch (error) {
-    console.error("批量删除错误:", error);
-    if (error instanceof HTTPException) {
-      return c.json(createErrorResponse(error.status, error.message), error.status);
-    }
-    return c.json(createErrorResponse(ApiStatus.INTERNAL_ERROR, error.message || "批量删除失败"), ApiStatus.INTERNAL_ERROR);
-  }
-});
-
-// 批量删除文件或目录 - API密钥用户版本
-fsRoutes.post("/api/user/fs/batch-remove", async (c) => {
-  const db = c.env.DB;
-  const apiKeyId = c.get("apiKeyId");
-  const body = await c.req.json();
-  const paths = body.paths;
-
-  if (!paths || !Array.isArray(paths) || paths.length === 0) {
-    return c.json(createErrorResponse(ApiStatus.BAD_REQUEST, "请提供有效的路径数组"), ApiStatus.BAD_REQUEST);
-  }
-
-  try {
-    const result = await batchRemoveItems(db, paths, apiKeyId, "apiKey", c.env.ENCRYPTION_SECRET);
-    return c.json({
-      code: ApiStatus.SUCCESS,
-      message: `批量删除完成，成功: ${result.success}，失败: ${result.failed.length}`,
-      data: result,
-      success: true,
-    });
-  } catch (error) {
-    console.error("批量删除错误:", error);
-    if (error instanceof HTTPException) {
-      return c.json(createErrorResponse(error.status, error.message), error.status);
-    }
-    return c.json(createErrorResponse(ApiStatus.INTERNAL_ERROR, error.message || "批量删除失败"), ApiStatus.INTERNAL_ERROR);
-  }
-});
-
-// 重命名文件或目录 - 管理员版本
-fsRoutes.post("/api/admin/fs/rename", async (c) => {
-  const db = c.env.DB;
-  const adminId = c.get("adminId");
-  const body = await c.req.json();
-  const oldPath = body.oldPath;
-  const newPath = body.newPath;
-
-  if (!oldPath || !newPath) {
-    return c.json(createErrorResponse(ApiStatus.BAD_REQUEST, "请提供源路径和目标路径"), ApiStatus.BAD_REQUEST);
-  }
-
-  try {
-    await renameItem(db, oldPath, newPath, adminId, "admin", c.env.ENCRYPTION_SECRET);
-    return c.json({
-      code: ApiStatus.SUCCESS,
-      message: "重命名成功",
-      success: true,
-    });
-  } catch (error) {
-    console.error("重命名错误:", error);
-    if (error instanceof HTTPException) {
-      return c.json(createErrorResponse(error.status, error.message), error.status);
-    }
-    return c.json(createErrorResponse(ApiStatus.INTERNAL_ERROR, error.message || "重命名失败"), ApiStatus.INTERNAL_ERROR);
-  }
-});
-
-// 重命名文件或目录 - API密钥用户版本
-fsRoutes.post("/api/user/fs/rename", async (c) => {
-  const db = c.env.DB;
-  const apiKeyId = c.get("apiKeyId");
-  const body = await c.req.json();
-  const oldPath = body.oldPath;
-  const newPath = body.newPath;
-
-  if (!oldPath || !newPath) {
-    return c.json(createErrorResponse(ApiStatus.BAD_REQUEST, "请提供源路径和目标路径"), ApiStatus.BAD_REQUEST);
-  }
-
-  try {
-    await renameItem(db, oldPath, newPath, apiKeyId, "apiKey", c.env.ENCRYPTION_SECRET);
-    return c.json({
-      code: ApiStatus.SUCCESS,
-      message: "重命名成功",
-      success: true,
-    });
-  } catch (error) {
-    console.error("重命名错误:", error);
-    if (error instanceof HTTPException) {
-      return c.json(createErrorResponse(error.status, error.message), error.status);
-    }
-    return c.json(createErrorResponse(ApiStatus.INTERNAL_ERROR, error.message || "重命名失败"), ApiStatus.INTERNAL_ERROR);
-  }
-});
-
-// ================ 分片上传相关路由 ================
-
-// OPTIONS处理 - 管理员版本，专门处理预检请求
-fsRoutes.options("/api/admin/fs/multipart/:action", (c) => {
-  setCorsHeaders(c);
-  c.header("Access-Control-Allow-Methods", "OPTIONS, POST");
-  c.header("Access-Control-Max-Age", "86400");
-  return c.text("", 204);
-});
-
-// 专门处理OPTIONS请求 - 管理员分片上传
-fsRoutes.options("/api/admin/fs/multipart/part", (c) => {
-  setCorsHeaders(c);
-  c.header("Access-Control-Allow-Methods", "OPTIONS, POST");
-  c.header("Access-Control-Max-Age", "86400"); // 24小时缓存预检响应
-  return c.text("", 204); // No Content
-});
-
-// 初始化分片上传 - 管理员版本
-fsRoutes.post("/api/admin/fs/multipart/init", authMiddleware, async (c) => {
-  try {
-    setCorsHeaders(c);
-    return await handleInitMultipartUpload(c);
-  } catch (error) {
-    setCorsHeaders(c);
-    if (error instanceof HTTPException) {
-      return c.json(
-          {
-            success: false,
-            message: error.message,
-            code: error.status,
-          },
-          error.status
-      );
-    }
-    return c.json(
-        {
-          success: false,
-          message: error.message || "初始化分片上传失败",
-          code: ApiStatus.INTERNAL_ERROR,
-        },
-        ApiStatus.INTERNAL_ERROR
+  // 未配置密码：直接返回“无需密码”的成功结果
+  if (!result.requiresPassword) {
+    return jsonOk(
+      c,
+      {
+        verified: true,
+        requiresPassword: false,
+        token: null,
+        path: result.path,
+      },
+      "该路径不需要密码",
     );
   }
-});
 
-// 上传分片 - 管理员版本
-// 确保可以处理大型请求
-fsRoutes.post("/api/admin/fs/multipart/part", authMiddleware, async (c) => {
-  try {
-    // 设置CORS头部
-    setCorsHeaders(c);
-
-    // 调用实际的处理函数
-    return await handleUploadPart(c);
-  } catch (error) {
-    // 确保即使发生错误，也添加CORS头部
-    setCorsHeaders(c);
-
-    // 返回适当的错误响应
-    if (error instanceof HTTPException) {
-      return c.json(
-          {
-            success: false,
-            message: error.message,
-            code: error.status,
-          },
-          error.status
-      );
-    }
-
+  if (!result.verified) {
+    const message = result.error === "EMPTY_PASSWORD" ? "密码不能为空" : "密码错误";
     return c.json(
-        {
-          success: false,
-          message: error.message || "上传分片失败",
-          code: ApiStatus.INTERNAL_ERROR,
+      {
+        ...createErrorResponse(ApiStatus.FORBIDDEN, message, "FS_PATH_PASSWORD_INVALID"),
+        data: {
+          path: result.path,
+          requiresPassword: true,
         },
-        ApiStatus.INTERNAL_ERROR
+      },
+      ApiStatus.FORBIDDEN,
     );
   }
+
+  return jsonOk(
+    c,
+    {
+      verified: true,
+      requiresPassword: true,
+      token: result.token,
+      path: result.path,
+    },
+    "路径密码验证成功",
+  );
 });
 
-// 完成分片上传 - 管理员版本
-fsRoutes.post("/api/admin/fs/multipart/complete", authMiddleware, async (c) => {
-  try {
-    setCorsHeaders(c);
-    return await handleCompleteMultipartUpload(c);
-  } catch (error) {
-    setCorsHeaders(c);
-    if (error instanceof HTTPException) {
-      return c.json(
-          {
-            success: false,
-            message: error.message,
-            code: error.status,
-          },
-          error.status
-      );
-    }
-    return c.json(
-        {
-          success: false,
-          message: error.message || "完成分片上传失败",
-          code: ApiStatus.INTERNAL_ERROR,
-        },
-        ApiStatus.INTERNAL_ERROR
-    );
+
+const getServiceParams = (userInfo) => {
+  if (userInfo.type === UserType.ADMIN) {
+    return { userIdOrInfo: userInfo.id, userType: UserType.ADMIN };
   }
-});
+  return { userIdOrInfo: userInfo.info, userType: UserType.API_KEY };
+};
 
-// 中止分片上传 - 管理员版本
-fsRoutes.post("/api/admin/fs/multipart/abort", authMiddleware, async (c) => {
-  try {
-    setCorsHeaders(c);
-    return await handleAbortMultipartUpload(c);
-  } catch (error) {
-    setCorsHeaders(c);
-    if (error instanceof HTTPException) {
-      return c.json(
-          {
-            success: false,
-            message: error.message,
-            code: error.status,
-          },
-          error.status
-      );
-    }
-    return c.json(
-        {
-          success: false,
-          message: error.message || "中止分片上传失败",
-          code: ApiStatus.INTERNAL_ERROR,
-        },
-        ApiStatus.INTERNAL_ERROR
-    );
+// 统一命名：根据用户类型获取“存储配置”
+const getStorageConfigByUserType = async (db, configId, userIdOrInfo, userType, encryptionSecret) => {
+  if (userType === UserType.ADMIN) {
+    return await getStorageConfigByIdForAdmin(db, configId, userIdOrInfo);
   }
-});
 
-// OPTIONS处理 - API密钥用户版本，专门处理预检请求
-fsRoutes.options("/api/user/fs/multipart/:action", (c) => {
-  setCorsHeaders(c);
-  c.header("Access-Control-Allow-Methods", "OPTIONS, POST");
-  c.header("Access-Control-Max-Age", "86400");
-  return c.text("", 204);
-});
+  // 当前仅支持 API Key 用户访问公共存储配置
+  if (userType === UserType.API_KEY) {
+    const factory = ensureRepositoryFactory(db);
+    const principalStorageAclRepository = factory.getPrincipalStorageAclRepository();
 
-// 专门处理OPTIONS请求 - 用户分片上传
-fsRoutes.options("/api/user/fs/multipart/part", (c) => {
-  setCorsHeaders(c);
-  c.header("Access-Control-Allow-Methods", "OPTIONS, POST");
-  c.header("Access-Control-Max-Age", "86400"); // 24小时缓存预检响应
-  return c.text("", 204); // No Content
-});
+    // 解析主体信息用于存储 ACL：subjectType + subjectId
+    const subjectType = "API_KEY";
+    const subjectId = typeof userIdOrInfo === "string" ? userIdOrInfo : userIdOrInfo?.id ?? null;
 
-// 初始化分片上传 - API密钥用户版本
-fsRoutes.post("/api/user/fs/multipart/init", apiKeyFileMiddleware, async (c) => {
-  try {
-    setCorsHeaders(c);
-    return await handleInitMultipartUpload(c);
-  } catch (error) {
-    setCorsHeaders(c);
-    if (error instanceof HTTPException) {
-      return c.json(
-          {
-            success: false,
-            message: error.message,
-            code: error.status,
-          },
-          error.status
-      );
-    }
-    return c.json(
-        {
-          success: false,
-          message: error.message || "初始化分片上传失败",
-          code: ApiStatus.INTERNAL_ERROR,
-        },
-        ApiStatus.INTERNAL_ERROR
-    );
-  }
-});
+    let allowed = true;
 
-// 上传分片 - API密钥用户版本
-// 确保可以处理大型请求
-fsRoutes.post("/api/user/fs/multipart/part", apiKeyFileMiddleware, async (c) => {
-  try {
-    // 设置CORS头部
-    setCorsHeaders(c);
-
-    // 调用实际的处理函数
-    return await handleUploadPart(c);
-  } catch (error) {
-    // 确保即使发生错误，也添加CORS头部
-    setCorsHeaders(c);
-
-    // 返回适当的错误响应
-    if (error instanceof HTTPException) {
-      return c.json(
-          {
-            success: false,
-            message: error.message,
-            code: error.status,
-          },
-          error.status
-      );
-    }
-
-    return c.json(
-        {
-          success: false,
-          message: error.message || "上传分片失败",
-          code: ApiStatus.INTERNAL_ERROR,
-        },
-        ApiStatus.INTERNAL_ERROR
-    );
-  }
-});
-
-// 完成分片上传 - API密钥用户版本
-fsRoutes.post("/api/user/fs/multipart/complete", apiKeyFileMiddleware, async (c) => {
-  try {
-    setCorsHeaders(c);
-    return await handleCompleteMultipartUpload(c);
-  } catch (error) {
-    setCorsHeaders(c);
-    if (error instanceof HTTPException) {
-      return c.json(
-          {
-            success: false,
-            message: error.message,
-            code: error.status,
-          },
-          error.status
-      );
-    }
-    return c.json(
-        {
-          success: false,
-          message: error.message || "完成分片上传失败",
-          code: ApiStatus.INTERNAL_ERROR,
-        },
-        ApiStatus.INTERNAL_ERROR
-    );
-  }
-});
-
-// 中止分片上传 - API密钥用户版本
-fsRoutes.post("/api/user/fs/multipart/abort", apiKeyFileMiddleware, async (c) => {
-  try {
-    setCorsHeaders(c);
-    return await handleAbortMultipartUpload(c);
-  } catch (error) {
-    setCorsHeaders(c);
-    if (error instanceof HTTPException) {
-      return c.json(
-          {
-            success: false,
-            message: error.message,
-            code: error.status,
-          },
-          error.status
-      );
-    }
-    return c.json(
-        {
-          success: false,
-          message: error.message || "中止分片上传失败",
-          code: ApiStatus.INTERNAL_ERROR,
-        },
-        ApiStatus.INTERNAL_ERROR
-    );
-  }
-});
-
-// ================ 预签名URL直传相关路由 ================
-
-// 获取预签名上传URL - 管理员版本
-fsRoutes.post("/api/admin/fs/presign", authMiddleware, async (c) => {
-  try {
-    // 获取必要的上下文
-    const db = c.env.DB;
-    const adminId = c.get("adminId");
-    const encryptionSecret = c.env.ENCRYPTION_SECRET || "default-encryption-key";
-
-    // 解析请求数据
-    const body = await c.req.json();
-    const path = body.path;
-    const fileName = body.fileName;
-    const contentType = body.contentType || "application/octet-stream";
-    const fileSize = body.fileSize || 0;
-
-    if (!path || !fileName) {
-      return c.json(createErrorResponse(ApiStatus.BAD_REQUEST, "请提供上传路径和文件名"), ApiStatus.BAD_REQUEST);
-    }
-
-    // 直接使用findMountPointByPath而不是getFileInfo来获取挂载点信息
-    const mountResult = await findMountPointByPath(db, path, adminId, "admin");
-
-    // 处理错误情况
-    if (mountResult.error) {
-      return c.json(createErrorResponse(mountResult.error.status, mountResult.error.message), mountResult.error.status);
-    }
-
-    const { mount, subPath } = mountResult;
-
-    if (!mount || mount.storage_type !== "S3") {
-      return c.json(createErrorResponse(ApiStatus.BAD_REQUEST, "当前路径不支持预签名URL上传"), ApiStatus.BAD_REQUEST);
-    }
-
-    // 获取S3配置
-    const s3Config = await db.prepare("SELECT * FROM s3_configs WHERE id = ?").bind(mount.storage_config_id).first();
-
-    if (!s3Config) {
-      return c.json(createErrorResponse(ApiStatus.NOT_FOUND, "未找到存储配置"), ApiStatus.NOT_FOUND);
-    }
-
-    // 构建完整的目标路径
-    const targetPath = path.endsWith("/") ? path + fileName : path + "/" + fileName;
-
-    // 计算文件相对于挂载点的路径
-    let relativePathInMount;
-    if (mount.mount_path === "/") {
-      relativePathInMount = targetPath.substring(1); // 移除开头的斜杠
-    } else {
-      relativePathInMount = targetPath.substring(mount.mount_path.length);
-      // 确保相对路径以斜杠开头
-      if (!relativePathInMount.startsWith("/")) {
-        relativePathInMount = "/" + relativePathInMount;
+    if (principalStorageAclRepository && subjectId) {
+      try {
+        const allowedConfigIds = await principalStorageAclRepository.findConfigIdsBySubject(subjectType, subjectId);
+        if (Array.isArray(allowedConfigIds) && allowedConfigIds.length > 0) {
+          // 当存在显式 ACL 记录时，启用白名单模式
+          allowed = allowedConfigIds.includes(configId);
+        }
+      } catch (error) {
+        console.warn("加载存储 ACL 失败，将回退到仅基于 is_public 的访问控制：", error);
       }
-      // 移除开头的斜杠以符合S3路径要求
-      relativePathInMount = relativePathInMount.substring(1);
     }
 
-    // S3路径构建
-    let s3Path = relativePathInMount;
-    if (s3Config.default_folder) {
-      s3Path = s3Config.default_folder.endsWith("/") ? s3Config.default_folder + s3Path : s3Config.default_folder + "/" + s3Path;
+    if (!allowed) {
+      return null;
     }
 
-    // 确保s3Path不为空
-    if (!s3Path) {
-      s3Path = fileName;
-    }
-
-    console.log(`生成预签名URL，路径: ${s3Path}`);
-
-    // 生成预签名URL
-    const presignedUrl = await generatePresignedPutUrl(s3Config, s3Path, contentType, encryptionSecret);
-
-    // 构建S3直接访问URL
-    const s3Url = buildS3Url(s3Config, s3Path);
-
-    // 生成文件ID，用于后续提交更新
-    const fileId = generateFileId();
-
-    // 生成文件slug（使用文件ID的前8位作为slug）
-    const fileSlug = "M-" + fileId.substring(0, 5);
-
-    return c.json({
-      code: ApiStatus.SUCCESS,
-      message: "获取预签名URL成功",
-      data: {
-        presignedUrl,
-        fileId,
-        s3Path,
-        s3Url,
-        mountId: mount.id,
-        s3ConfigId: s3Config.id,
-        targetPath,
-      },
-      success: true,
-    });
-  } catch (error) {
-    console.error("获取预签名URL错误:", error);
-    if (error instanceof HTTPException) {
-      return c.json(createErrorResponse(error.status, error.message), error.status);
-    }
-    return c.json(createErrorResponse(ApiStatus.INTERNAL_ERROR, error.message || "获取预签名URL失败"), ApiStatus.INTERNAL_ERROR);
+    return await getPublicStorageConfigById(db, configId);
   }
-});
 
-// 获取预签名上传URL - API密钥用户版本
-fsRoutes.post("/api/user/fs/presign", apiKeyFileMiddleware, async (c) => {
-  try {
-    // 获取必要的上下文
-    const db = c.env.DB;
-    const apiKeyId = c.get("apiKeyId");
-    const encryptionSecret = c.env.ENCRYPTION_SECRET || "default-encryption-key";
+  // 其他用户类型目前不允许直接访问存储配置
+  return null;
+};
 
-    // 解析请求数据
-    const body = await c.req.json();
-    const path = body.path;
-    const fileName = body.fileName;
-    const contentType = body.contentType || "application/octet-stream";
-    const fileSize = body.fileSize || 0;
+const sharedContext = {
+  // FS 子路由只需要这三个 helper 即可完成鉴权相关操作。
+  getAccessibleMounts: getAccessibleMountsForUser,
+  getServiceParams,
+  getStorageConfigByUserType,
+  verifyPathPasswordToken,
+};
 
-    if (!path || !fileName) {
-      return c.json(createErrorResponse(ApiStatus.BAD_REQUEST, "请提供上传路径和文件名"), ApiStatus.BAD_REQUEST);
-    }
+registerBrowseRoutes(fsRoutes, sharedContext);
+registerWriteRoutes(fsRoutes, sharedContext);
+registerMultipartRoutes(fsRoutes, sharedContext);
+registerOpsRoutes(fsRoutes, sharedContext);
+registerSearchShareRoutes(fsRoutes, sharedContext);
 
-    // 直接使用findMountPointByPath而不是getFileInfo来获取挂载点信息
-    const mountResult = await findMountPointByPath(db, path, apiKeyId, "apiKey");
-
-    // 处理错误情况
-    if (mountResult.error) {
-      return c.json(createErrorResponse(mountResult.error.status, mountResult.error.message), mountResult.error.status);
-    }
-
-    const { mount, subPath } = mountResult;
-
-    if (!mount || mount.storage_type !== "S3") {
-      return c.json(createErrorResponse(ApiStatus.BAD_REQUEST, "当前路径不支持预签名URL上传"), ApiStatus.BAD_REQUEST);
-    }
-
-    // 获取S3配置
-    const s3Config = await db.prepare("SELECT * FROM s3_configs WHERE id = ?").bind(mount.storage_config_id).first();
-
-    if (!s3Config) {
-      return c.json(createErrorResponse(ApiStatus.NOT_FOUND, "未找到存储配置"), ApiStatus.NOT_FOUND);
-    }
-
-    // 构建完整的目标路径
-    const targetPath = path.endsWith("/") ? path + fileName : path + "/" + fileName;
-
-    // 计算文件相对于挂载点的路径
-    let relativePathInMount;
-    if (mount.mount_path === "/") {
-      relativePathInMount = targetPath.substring(1); // 移除开头的斜杠
-    } else {
-      relativePathInMount = targetPath.substring(mount.mount_path.length);
-      // 确保相对路径以斜杠开头
-      if (!relativePathInMount.startsWith("/")) {
-        relativePathInMount = "/" + relativePathInMount;
-      }
-      // 移除开头的斜杠以符合S3路径要求
-      relativePathInMount = relativePathInMount.substring(1);
-    }
-
-    // S3路径构建
-    let s3Path = relativePathInMount;
-    if (s3Config.default_folder) {
-      s3Path = s3Config.default_folder.endsWith("/") ? s3Config.default_folder + s3Path : s3Config.default_folder + "/" + s3Path;
-    }
-
-    // 确保s3Path不为空
-    if (!s3Path) {
-      s3Path = fileName;
-    }
-
-    console.log(`生成预签名URL，路径: ${s3Path}`);
-
-    // 生成预签名URL
-    const presignedUrl = await generatePresignedPutUrl(s3Config, s3Path, contentType, encryptionSecret);
-
-    // 构建S3直接访问URL
-    const s3Url = buildS3Url(s3Config, s3Path);
-
-    // 生成文件ID，用于后续提交更新
-    const fileId = generateFileId();
-
-    // 生成文件slug（使用文件ID的前8位作为slug）
-    const fileSlug = "M-" + fileId.substring(0, 8);
-
-    return c.json({
-      code: ApiStatus.SUCCESS,
-      message: "获取预签名URL成功",
-      data: {
-        presignedUrl,
-        fileId,
-        s3Path,
-        s3Url,
-        mountId: mount.id,
-        s3ConfigId: s3Config.id,
-        targetPath,
-      },
-      success: true,
-    });
-  } catch (error) {
-    console.error("获取预签名URL错误:", error);
-    if (error instanceof HTTPException) {
-      return c.json(createErrorResponse(error.status, error.message), error.status);
-    }
-    return c.json(createErrorResponse(ApiStatus.INTERNAL_ERROR, error.message || "获取预签名URL失败"), ApiStatus.INTERNAL_ERROR);
-  }
-});
-
-// 提交预签名URL上传完成 - 管理员版本
-fsRoutes.post("/api/admin/fs/presign/commit", authMiddleware, async (c) => {
-  try {
-    // 获取必要的上下文
-    const db = c.env.DB;
-    const adminId = c.get("adminId");
-
-    // 解析请求数据
-    const body = await c.req.json();
-    const fileId = body.fileId;
-    const s3Path = body.s3Path;
-    const s3Url = body.s3Url;
-    const targetPath = body.targetPath;
-    const s3ConfigId = body.s3ConfigId;
-    const mountId = body.mountId;
-    const etag = body.etag;
-    const contentType = body.contentType || "application/octet-stream";
-    const fileSize = body.fileSize || 0;
-
-    if (!fileId || !s3Path || !s3ConfigId || !targetPath) {
-      return c.json(createErrorResponse(ApiStatus.BAD_REQUEST, "请提供完整的上传信息"), ApiStatus.BAD_REQUEST);
-    }
-
-    // 获取S3配置
-    const s3Config = await db.prepare("SELECT * FROM s3_configs WHERE id = ?").bind(s3ConfigId).first();
-
-    if (!s3Config) {
-      return c.json(createErrorResponse(ApiStatus.NOT_FOUND, "未找到存储配置"), ApiStatus.NOT_FOUND);
-    }
-
-    // 提取文件名 - 改进的文件名提取逻辑
-    // 尝试从targetPath中提取文件名
-    let fileName = targetPath.split("/").filter(Boolean).pop();
-    // 如果targetPath中没有提取到有效文件名，则尝试从s3Path中提取
-    if (!fileName) {
-      fileName = s3Path.split("/").filter(Boolean).pop();
-    }
-    // 如果两者都未提取到有效文件名，使用默认名称
-    if (!fileName) {
-      fileName = "unnamed_file";
-    }
-
-    // 生成slug（使用文件ID的前8位作为slug）
-    const fileSlug = "M-" + fileId.substring(0, 5);
-
-    // 获取当前时间
-    const now = getLocalTimeString();
-
-    // 记录文件上传成功
-    await db
-        .prepare(
-            `
-      INSERT INTO files (
-        id, filename, storage_path, s3_url, mimetype, size, s3_config_id, slug, etag, created_by, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `
-        )
-        .bind(fileId, fileName, s3Path, s3Url, contentType, fileSize, s3ConfigId, fileSlug, etag, adminId, now, now)
-        .run();
-
-    // 提取父路径
-    const parentPath = targetPath.substring(0, targetPath.lastIndexOf("/") + 1);
-
-    // 刷新目录缓存
-    if (mountId && parentPath) {
-      const invalidatedCount = directoryCacheManager.invalidatePathAndAncestors(mountId, parentPath);
-      console.log(`缓存已刷新（包含所有父路径）：挂载点=${mountId}, 路径=${parentPath}, 清理了${invalidatedCount}个缓存条目`);
-    } else {
-      console.warn(`跳过缓存刷新，参数不完整: mountId=${mountId}, parentPath=${parentPath}`);
-    }
-
-    // 调用clearCacheForFilePath函数，更彻底地清除文件相关缓存
-    try {
-      await clearCacheForFilePath(db, s3Path, s3ConfigId);
-      console.log(`已调用clearCacheForFilePath清除文件相关缓存 - 路径=${s3Path}, S3配置ID=${s3ConfigId}`);
-    } catch (cacheError) {
-      // 不让缓存清除错误影响上传流程
-      console.warn(`清除文件缓存时出错: ${cacheError.message}`);
-    }
-
-    return c.json({
-      code: ApiStatus.SUCCESS,
-      message: "文件上传成功",
-      data: {
-        fileId,
-        path: targetPath,
-        name: fileName,
-        size: fileSize,
-        type: contentType,
-      },
-      success: true,
-    });
-  } catch (error) {
-    console.error("提交预签名上传错误:", error);
-    if (error instanceof HTTPException) {
-      return c.json(createErrorResponse(error.status, error.message), error.status);
-    }
-    return c.json(createErrorResponse(ApiStatus.INTERNAL_ERROR, error.message || "提交上传信息失败"), ApiStatus.INTERNAL_ERROR);
-  }
-});
-
-// 提交预签名URL上传完成 - API密钥用户版本
-fsRoutes.post("/api/user/fs/presign/commit", apiKeyFileMiddleware, async (c) => {
-  try {
-    // 获取必要的上下文
-    const db = c.env.DB;
-    const apiKeyId = c.get("apiKeyId");
-
-    // 解析请求数据
-    const body = await c.req.json();
-    const fileId = body.fileId;
-    const s3Path = body.s3Path;
-    const s3Url = body.s3Url;
-    const targetPath = body.targetPath;
-    const s3ConfigId = body.s3ConfigId;
-    const mountId = body.mountId;
-    const etag = body.etag;
-    const contentType = body.contentType || "application/octet-stream";
-    const fileSize = body.fileSize || 0;
-
-    if (!fileId || !s3Path || !s3ConfigId || !targetPath) {
-      return c.json(createErrorResponse(ApiStatus.BAD_REQUEST, "请提供完整的上传信息"), ApiStatus.BAD_REQUEST);
-    }
-
-    // 获取S3配置
-    const s3Config = await db.prepare("SELECT * FROM s3_configs WHERE id = ?").bind(s3ConfigId).first();
-
-    if (!s3Config) {
-      return c.json(createErrorResponse(ApiStatus.NOT_FOUND, "未找到存储配置"), ApiStatus.NOT_FOUND);
-    }
-
-    // 提取文件名 - 改进的文件名提取逻辑
-    // 尝试从targetPath中提取文件名
-    let fileName = targetPath.split("/").filter(Boolean).pop();
-    // 如果targetPath中没有提取到有效文件名，则尝试从s3Path中提取
-    if (!fileName) {
-      fileName = s3Path.split("/").filter(Boolean).pop();
-    }
-    // 如果两者都未提取到有效文件名，使用默认名称
-    if (!fileName) {
-      fileName = "unnamed_file";
-    }
-
-    // 生成slug（使用文件ID的前8位作为slug）
-    const fileSlug = "M-" + fileId.substring(0, 5);
-
-    // 获取当前时间
-    const now = getLocalTimeString();
-
-    // 记录文件上传成功
-    await db
-        .prepare(
-            `
-      INSERT INTO files (
-        id, filename, storage_path, s3_url, mimetype, size, s3_config_id, slug, etag, created_by, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `
-        )
-        .bind(fileId, fileName, s3Path, s3Url, contentType, fileSize, s3ConfigId, fileSlug, etag, `apikey:${apiKeyId}`, now, now)
-        .run();
-
-    // 提取父路径
-    const parentPath = targetPath.substring(0, targetPath.lastIndexOf("/") + 1);
-
-    // 刷新目录缓存
-    if (mountId && parentPath) {
-      const invalidatedCount = directoryCacheManager.invalidatePathAndAncestors(mountId, parentPath);
-      console.log(`缓存已刷新（包含所有父路径）：挂载点=${mountId}, 路径=${parentPath}, 清理了${invalidatedCount}个缓存条目`);
-    } else {
-      console.warn(`跳过缓存刷新，参数不完整: mountId=${mountId}, parentPath=${parentPath}`);
-    }
-
-    // 调用clearCacheForFilePath函数，更彻底地清除文件相关缓存
-    try {
-      await clearCacheForFilePath(db, s3Path, s3ConfigId);
-      console.log(`已调用clearCacheForFilePath清除文件相关缓存 - 路径=${s3Path}, S3配置ID=${s3ConfigId}`);
-    } catch (cacheError) {
-      // 不让缓存清除错误影响上传流程
-      console.warn(`清除文件缓存时出错: ${cacheError.message}`);
-    }
-
-    return c.json({
-      code: ApiStatus.SUCCESS,
-      message: "文件上传成功",
-      data: {
-        fileId,
-        path: targetPath,
-        name: fileName,
-        size: fileSize,
-        type: contentType,
-      },
-      success: true,
-    });
-  } catch (error) {
-    console.error("提交预签名上传错误:", error);
-    if (error instanceof HTTPException) {
-      return c.json(createErrorResponse(error.status, error.message), error.status);
-    }
-    return c.json(createErrorResponse(ApiStatus.INTERNAL_ERROR, error.message || "提交上传信息失败"), ApiStatus.INTERNAL_ERROR);
-  }
-});
 
 export default fsRoutes;

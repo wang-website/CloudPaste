@@ -4,8 +4,12 @@
  * 支持本地开发、生产和Docker部署环境
  */
 
+import { useLocalStorage } from "@vueuse/core";
+import { createLogger } from "@/utils/logger.js";
+
 // 默认的开发环境API基础URL
 const DEFAULT_DEV_API_URL = "http://localhost:8787";
+const log = createLogger("ApiConfig");
 
 // 检查是否在Docker环境中运行
 const isDockerEnvironment = () => {
@@ -19,16 +23,16 @@ function getApiBaseUrl() {
     const runtimeUrl = window.appConfig.backendUrl;
     // 统一使用__BACKEND_URL__作为占位符，避免不同环境处理逻辑不一致
     if (runtimeUrl !== "__" + "BACKEND_URL__") {
-      console.log("使用运行时配置的后端URL:", runtimeUrl);
+      log.debug("使用运行时配置的后端URL:", runtimeUrl);
       return runtimeUrl;
     }
   }
 
   // 非Docker环境下才检查localStorage
   if (!isDockerEnvironment() && typeof window !== "undefined" && window.localStorage) {
-    const storedUrl = localStorage.getItem("vite-api-base-url");
+    const storedUrl = useLocalStorage("vite-api-base-url", "").value;
     if (storedUrl) {
-      console.log("非Docker环境：使用localStorage中的后端URL:", storedUrl);
+      log.debug("非Docker环境：使用localStorage中的后端URL:", storedUrl);
       return storedUrl;
     }
   }
@@ -37,6 +41,12 @@ function getApiBaseUrl() {
   const envUrl = import.meta.env.VITE_BACKEND_URL;
   if (envUrl) {
     return envUrl;
+  }
+
+  // 生产环境：单 Worker 部署时使用同源（Cloudflare Workers SPA 模式）
+  if (import.meta.env.PROD && typeof window !== "undefined") {
+    log.debug("生产环境：使用同源后端", window.location.origin);
+    return window.location.origin;
   }
 
   // 最后使用默认值

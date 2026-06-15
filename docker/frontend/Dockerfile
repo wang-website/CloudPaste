@@ -1,13 +1,13 @@
 # 构建阶段
-FROM node:18.18-alpine AS build
+FROM node:22-alpine AS build
 
 WORKDIR /app
 
-# 复制前端package.json和锁文件
-COPY frontend/package*.json ./
+# 复制依赖（利用 Docker layer cache）
+COPY frontend/package.json frontend/package-lock.json frontend/.npmrc ./
 
 # 安装依赖
-RUN npm ci --cache /tmp/npm-cache
+RUN npm ci --cache /tmp/npm-cache --no-audit --no-fund
 
 # 复制前端源代码
 COPY frontend/ ./
@@ -40,4 +40,4 @@ RUN chmod +x /entrypoint.sh
 EXPOSE 80
 
 # 使用启动脚本
-CMD ["/entrypoint.sh"] 
+CMD ["/entrypoint.sh"]

@@ -1,105 +1,101 @@
 /**
- * 文件处理相关工具函数
+ * 文件处理工具
+ * 基于mime-types标准库和可配置的预览设置
  */
 
+import mime from "mime-types";
+
 /**
- * 获取文件的MIME类型
+ * 获取文件扩展名
+ * @param {string} filename - 文件名
+ * @returns {string} 扩展名
+ */
+export function getFileExtension(filename) {
+  if (!filename) return "";
+  return filename.split(".").pop().toLowerCase();
+}
+
+/**
+ * 获取有效的MIME类型
+ * @param {string} mimetype - 传入的MIME类型
+ * @param {string} filename - 文件名
+ * @returns {string} 有效的MIME类型
+ */
+export function getEffectiveMimeType(mimetype, filename) {
+  if (mimetype && mimetype !== "application/octet-stream" && mimetype !== "unknown/unknown" && mimetype !== "" && mimetype !== "undefined") {
+    console.log(`getEffectiveMimeType: 使用传入MIME类型 "${mimetype}" (文件: ${filename || "N/A"})`);
+    return mimetype;
+  }
+  const detectedMime = mime.lookup(filename) || "application/octet-stream";
+  console.log(`getEffectiveMimeType: 从文件名 "${filename}" 推断MIME类型 -> "${detectedMime}"`);
+  return detectedMime;
+}
+
+/**
+ * 获取响应的Content-Type
+ * @param {string} filename - 文件名
+ * @param {string} mimetype - MIME类型
+ * @param {Object} options - 选项
+ * @returns {Object} Content-Type和Content-Disposition
+ */
+export function getContentTypeAndDisposition(filename, mimetype, options = {}) {
+  const { forceDownload = false } = options;
+  const contentType = getEffectiveMimeType(mimetype, filename);
+
+  if (forceDownload) {
+    return {
+      contentType,
+      contentDisposition: `attachment; filename="${encodeURIComponent(filename)}"`,
+    };
+  }
+
+  return {
+    contentType,
+    contentDisposition: `inline; filename="${encodeURIComponent(filename)}"`,
+  };
+}
+
+/**
+ * 从文件名推断MIME类型（兼容性函数）
  * @param {string} filename - 文件名
  * @returns {string} MIME类型
  */
-export function getMimeType(filename) {
-  if (!filename) return "application/octet-stream";
-
-  const ext = filename.split(".").pop().toLowerCase();
-
-  const mimeMap = {
-    // 图片
-    jpg: "image/jpeg",
-    jpeg: "image/jpeg",
-    png: "image/png",
-    gif: "image/gif",
-    webp: "image/webp",
-    svg: "image/svg+xml",
-    ico: "image/x-icon",
-    bmp: "image/bmp",
-    tiff: "image/tiff",
-    tif: "image/tiff",
-
-    // 文档
-    pdf: "application/pdf",
-    doc: "application/msword",
-    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    xls: "application/vnd.ms-excel",
-    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    ppt: "application/vnd.ms-powerpoint",
-    pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    odt: "application/vnd.oasis.opendocument.text",
-    ods: "application/vnd.oasis.opendocument.spreadsheet",
-    odp: "application/vnd.oasis.opendocument.presentation",
-    rtf: "application/rtf",
-
-    // 文本
-    txt: "text/plain",
-    html: "text/html",
-    htm: "text/html",
-    css: "text/css",
-    csv: "text/csv",
-    js: "text/javascript",
-    jsx: "text/javascript",
-    ts: "text/typescript",
-    tsx: "text/typescript",
-    json: "application/json",
-    xml: "application/xml",
-    md: "text/markdown",
-    markdown: "text/markdown",
-
-    // 音频
-    mp3: "audio/mpeg",
-    wav: "audio/wav",
-    ogg: "audio/ogg",
-    flac: "audio/flac",
-    m4a: "audio/mp4",
-    aac: "audio/aac",
-
-    // 视频
-    mp4: "video/mp4",
-    webm: "video/webm",
-    avi: "video/x-msvideo",
-    mov: "video/quicktime",
-    wmv: "video/x-ms-wmv",
-    flv: "video/x-flv",
-    mkv: "video/x-matroska",
-
-    // 压缩
-    zip: "application/zip",
-    rar: "application/vnd.rar",
-    tar: "application/x-tar",
-    gz: "application/gzip",
-    "7z": "application/x-7z-compressed",
-
-    // 可执行文件
-    exe: "application/x-msdownload",
-    dll: "application/x-msdownload",
-    apk: "application/vnd.android.package-archive",
-    dmg: "application/x-apple-diskimage",
-
-    // 字体
-    ttf: "font/ttf",
-    otf: "font/otf",
-    woff: "font/woff",
-    woff2: "font/woff2",
-    eot: "application/vnd.ms-fontobject",
-
-    // 3D模型
-    obj: "model/obj",
-    stl: "model/stl",
-    gltf: "model/gltf+json",
-    glb: "model/gltf-binary",
-
-    // 其他
-    bin: "application/octet-stream",
-    dat: "application/octet-stream",
-  };
-
-  return mimeMap[ext] || "application/octet-stream";
+export function getMimeTypeFromFilename(filename) {
+  return getEffectiveMimeType(null, filename);
 }
+
+/**
+ * 检查是否为Office文件（兼容性函数）
+ * @param {string} mimeType - MIME类型
+ * @param {string} filename - 文件名（忽略）
+ * @returns {boolean}
+ */
+export function isOfficeFile(mimeType, filename = "") {
+  const officeMimeTypes = [
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "application/vnd.ms-excel",
+    "application/vnd.ms-powerpoint",
+    "application/msword",
+  ];
+  const isOffice = officeMimeTypes.includes(mimeType);
+  console.log(`isOfficeFile: "${mimeType}" (文件: ${filename || "N/A"}) -> ${isOffice ? "✅ Office文件" : "❌ 非Office文件"}`);
+  return isOffice;
+}
+
+/**
+ * 检查是否为文档文件（可直接预览）
+ * @param {string} mimeType - MIME类型
+ * @param {string} filename - 文件名（忽略）
+ * @returns {boolean}
+ */
+export function isDocumentFile(mimeType, filename = "") {
+  const documentMimeTypes = ["application/pdf"];
+  const isDocument = documentMimeTypes.includes(mimeType);
+  console.log(`isDocumentFile: "${mimeType}" (文件: ${filename || "N/A"}) -> ${isDocument ? "✅ 文档文件" : "❌ 非文档文件"}`);
+  return isDocument;
+}
+
+// 导出标准库（便于直接使用）
+export { mime };

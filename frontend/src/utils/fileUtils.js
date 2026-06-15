@@ -1,101 +1,64 @@
 /**
- * 文件操作工具函数
+ * 文件相关展示工具函数
+ * 统一处理文件大小与剩余访问次数的格式化
  */
+
+import { formatFileSize as formatFileSizeUtil } from "./fileTypes.js";
 
 /**
- * 使用fetch API下载文件并保存
- * @param {string} url - 文件URL
- * @param {string} filename - 下载文件名
- * @returns {Promise<void>}
+ * 格式化文件大小
+ * @param {number} bytes - 文件大小（字节）
+ * @param {boolean} useChineseUnits - 是否使用中文单位
+ * @returns {string}
  */
-export async function downloadFileWithAuth(url, filename) {
-  try {
-    console.log("请求下载URL:", url);
-    // 使用fetch请求URL，添加认证头
-    const response = await fetch(url, {
-      headers: getAuthHeaders(),
-      mode: "cors", // 明确设置跨域模式
-      credentials: "include", // 包含凭证（cookies等）
-    });
-
-    // 检查响应状态
-    if (!response.ok) {
-      throw new Error(`下载失败: ${response.status} ${response.statusText}`);
-    }
-
-    // 获取blob数据
-    const blob = await response.blob();
-
-    // 创建临时下载链接
-    const downloadUrl = window.URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = downloadUrl;
-    link.download = filename;
-
-    // 添加到文档并点击触发下载
-    document.body.appendChild(link);
-    link.click();
-
-    // 清理
-    document.body.removeChild(link);
-    window.URL.revokeObjectURL(downloadUrl);
-  } catch (error) {
-    console.error("文件下载出错:", error);
-    throw error;
+export const formatFileSize = (bytes, useChineseUnits = false) => {
+  if (typeof bytes !== "number" || !Number.isFinite(bytes) || bytes < 0) {
+    return "-";
   }
-}
+  return formatFileSizeUtil(bytes, useChineseUnits);
+};
 
 /**
- * 获取认证请求头
- * @returns {Object} 包含认证信息的请求头对象
+ * 计算剩余可访问次数
+ * @param {Object} item - 文件或文本分享对象
+ * @returns {number} - Infinity 表示无限制，0 表示已用完，正整数表示剩余次数
  */
-export function getAuthHeaders() {
-  const headers = {};
-
-  // 添加管理员令牌
-  const token = localStorage.getItem("admin_token");
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-    return headers;
+export const getRemainingViews = (item) => {
+  if (!item || !item.max_views || item.max_views === 0) {
+    // 无限制
+    return Infinity;
   }
 
-  // 添加API密钥
-  const apiKey = localStorage.getItem("api_key");
-  if (apiKey) {
-    headers.Authorization = `ApiKey ${apiKey}`;
-    return headers;
+  // 兼容不同字段：优先使用后端提供的 view_count，其次是 views
+  const viewCount = item.view_count !== undefined ? item.view_count : item.views || 0;
+  const remaining = item.max_views - viewCount;
+
+  // 已用完
+  if (remaining <= 0) {
+    return 0;
   }
 
-  return headers;
-}
+  // 返回剩余次数
+  return remaining;
+};
 
 /**
- * 创建带有认证信息的预览URL Blob
- * @param {string} url - 文件预览URL
- * @returns {Promise<string>} 可访问的Blob URL
+ * 获取剩余访问次数对应的样式类（基于数值模型）
+ * @param {number} remaining - 剩余次数（Infinity 表示无限制，0 表示已用完）
+ * @param {boolean} darkMode - 是否为暗色模式
+ * @returns {string}
  */
-export async function createAuthenticatedPreviewUrl(url) {
-  try {
-    console.log("请求预览URL:", url);
-    // 使用fetch请求URL，添加认证头
-    const response = await fetch(url, {
-      headers: getAuthHeaders(),
-      mode: "cors", // 明确设置跨域模式
-      credentials: "include", // 包含凭证（cookies等）
-    });
-
-    // 检查响应状态
-    if (!response.ok) {
-      throw new Error(`预览加载失败: ${response.status} ${response.statusText}`);
-    }
-
-    // 获取blob数据
-    const blob = await response.blob();
-
-    // 创建blob URL用于预览
-    return window.URL.createObjectURL(blob);
-  } catch (error) {
-    console.error("预览URL创建失败:", error);
-    throw error;
+export const getRemainingViewsClass = (remaining, darkMode = false) => {
+  if (remaining === 0) {
+    // 已用完：红色高亮
+    return darkMode ? "text-red-400" : "text-red-600";
   }
-}
+
+  if (remaining !== Infinity && remaining < 10) {
+    // 剩余次数很少（<10）：黄色提醒
+    return darkMode ? "text-yellow-400" : "text-yellow-600";
+  }
+
+  // 正常状态
+  return darkMode ? "text-gray-300" : "text-gray-700";
+};

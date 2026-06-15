@@ -1,6 +1,8 @@
 <script setup>
 import { ref, onMounted } from "vue";
+import { useLocalStorage } from "@vueuse/core";
 import { API_BASE_URL, getEnvironmentInfo } from "../api/config";
+import { createLogger } from "@/utils/logger.js";
 
 // 预设环境配置
 const environments = [
@@ -16,6 +18,8 @@ const showCustomInput = ref(false);
 
 // 当前环境URL
 const currentEnv = ref(API_BASE_URL);
+const storedApiBaseUrl = useLocalStorage("vite-api-base-url", API_BASE_URL);
+const log = createLogger("EnvSwitcher");
 
 // 初始化时检查是否是自定义环境
 onMounted(() => {
@@ -27,13 +31,13 @@ onMounted(() => {
   }
 
   // 输出当前环境信息
-  console.log("当前API环境:", getEnvironmentInfo());
+  log.debug("当前API环境:", getEnvironmentInfo());
 });
 
 // 切换环境
 const switchEnvironment = (url) => {
   // 存储选择的环境URL到本地存储
-  localStorage.setItem("vite-api-base-url", url);
+  storedApiBaseUrl.value = url;
   currentEnv.value = url;
 
   // 刷新页面以应用新环境
