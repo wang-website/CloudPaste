@@ -7,7 +7,7 @@ import { buildAuthHeadersForRequest } from "@/modules/security/index.js";
 import { api } from "@/api";
 
 const MB = 1024 * 1024;
-const DEFAULT_TG_PART_SIZE_BYTES = 15 * MB;
+const DEFAULT_TG_PART_SIZE_BYTES = 10 * MB;
 const DEFAULT_TG_UPLOAD_CONCURRENCY = 2;
 
 function toPositiveInt(value, fallback) {
