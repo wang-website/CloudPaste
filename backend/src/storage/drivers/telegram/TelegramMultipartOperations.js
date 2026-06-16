@@ -487,8 +487,11 @@ export class TelegramMultipartOperations {
     let existing = null;
     try {
       existing = await partsRepo.getPart(sessionRow.id, partNo);
-    } catch {
+    } catch (e) {
       // 数据库查询失败时继续上传（保持鲁棒性）
+      if (process.env.DEBUG) {
+        console.error(`[TELEGRAM] 查询分片 ${partNo} 状态失败:`, e?.message || e);
+      }
     }
 
     if (existing) {
@@ -509,10 +512,13 @@ export class TelegramMultipartOperations {
         const startMs = Date.now();
         const maxWaitMs = 500; // 只等待 500ms 而不是 3 秒
         
-        try {
-          await driver._sleep(300);
-        } catch {
-          // 被中止，继续上传
+        // 只有在还有足够时间时才进行 sleep，避免不必要的延迟
+        if (Date.now() - startMs < maxWaitMs) {
+          try {
+            await driver._sleep(300);
+          } catch {
+            // 被中止，继续上传
+          }
         }
 
         // 快速检查一次
@@ -532,8 +538,11 @@ export class TelegramMultipartOperations {
               // 如果前次上传失败，继续新的上传尝试
               existing = null;
             }
-          } catch {
+          } catch (e) {
             // 查询失败，继续新的上传
+            if (process.env.DEBUG) {
+              console.error(`[TELEGRAM] 轮询检查分片 ${partNo} 失败:`, e?.message || e);
+            }
           }
         }
       }
