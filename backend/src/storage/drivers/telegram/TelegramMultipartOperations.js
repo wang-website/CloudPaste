@@ -512,17 +512,19 @@ export class TelegramMultipartOperations {
         const startMs = Date.now();
         const maxWaitMs = 500; // 只等待 500ms 而不是 3 秒
         
-        // 只有在还有足够时间时才进行 sleep，避免不必要的延迟
-        if (Date.now() - startMs < maxWaitMs) {
+        // 只有在还有时间时才进行 sleep（留至少 100ms 用于查询）
+        const timeBeforeSleep = Date.now() - startMs;
+        if (timeBeforeSleep < maxWaitMs - 100) {
           try {
-            await driver._sleep(300);
+            await driver._sleep(Math.min(200, maxWaitMs - timeBeforeSleep - 50));
           } catch {
             // 被中止，继续上传
           }
         }
 
-        // 快速检查一次
-        if (Date.now() - startMs < maxWaitMs) {
+        // 快速检查一次（如果还在超时窗口内）
+        const elapsedMs = Date.now() - startMs;
+        if (elapsedMs < maxWaitMs) {
           try {
             const latest = await partsRepo.getPart(sessionRow.id, partNo);
             const latestStatus = latest?.status || null;
