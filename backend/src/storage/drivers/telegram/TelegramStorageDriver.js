@@ -78,9 +78,9 @@ export class TelegramStorageDriver extends BaseDriver {
     this.apiBaseUrl = null;
     this.botApiMode = "official";
     // 分片大小（用于“挂载浏览器”的断点续传/分片上传）
-    // - 默认 15MB
+    // - 默认 10MB（优化 Cloudflare Worker CPU 消耗，减少单次请求时间）
     // - 由存储配置 part_size_mb 控制
-    this.partSizeBytes = 15 * 1024 * 1024;
+    this.partSizeBytes = 10 * 1024 * 1024;
     // 直传大小上限（用于 share 流式/表单上传、以及非分片的 FS 上传）
     // - official：限制 20MB
     // - self_hosted：不限制
@@ -99,7 +99,7 @@ export class TelegramStorageDriver extends BaseDriver {
     const botToken = await decryptIfNeeded(botTokenEncrypted, this.encryptionSecret);
     const rawTargetChatId = this.config?.target_chat_id ?? this.config?.targetChatId;
     const apiBaseUrl = normalizeApiBaseUrl(this.config?.endpoint_url);
-    const partSizeMb = Number(this.config?.part_size_mb ?? 15);
+    const partSizeMb = Number(this.config?.part_size_mb ?? 10);
     const uploadConcurrency = Number(this.config?.upload_concurrency ?? 2);
     const botApiMode = String(this.config?.bot_api_mode || "official").trim().toLowerCase();
     const verifyAfterUpload = this.config?.verify_after_upload;
@@ -131,7 +131,7 @@ export class TelegramStorageDriver extends BaseDriver {
     this.targetChatId = targetChatId;
     this.apiBaseUrl = apiBaseUrl;
     this.botApiMode = botApiMode === "self_hosted" ? "self_hosted" : "official";
-    this.partSizeBytes = Number.isFinite(partSizeMb) && partSizeMb > 0 ? Math.floor(partSizeMb * 1024 * 1024) : 15 * 1024 * 1024;
+    this.partSizeBytes = Number.isFinite(partSizeMb) && partSizeMb > 0 ? Math.floor(partSizeMb * 1024 * 1024) : 10 * 1024 * 1024;
     this.directUploadMaxBytes = this.botApiMode === "self_hosted" ? Infinity : TELEGRAM_DIRECT_UPLOAD_MAX_BYTES_OFFICIAL;
     this.uploadConcurrency = Number.isFinite(uploadConcurrency) && uploadConcurrency > 0 ? Math.floor(uploadConcurrency) : 2;
     this.verifyAfterUpload = verifyAfterUpload === false ? false : true;

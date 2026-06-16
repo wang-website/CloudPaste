@@ -97,9 +97,9 @@ export class TelegramMultipartOperations {
       throw new DriverError("TELEGRAM 分片上传初始化失败：缺少 db 或 mount 信息", { status: 500 });
     }
 
-    // 最小分片5MB,最大100MB
+    // 最小分片5MB,最大50MB（在 Cloudflare Worker 环境中为了避免 CPU 限制）
     const MIN_PART_SIZE = 5 * 1024 * 1024;
-    const MAX_PART_SIZE = 100 * 1024 * 1024;
+    const MAX_PART_SIZE = 50 * 1024 * 1024;
     let effectivePartSize = Number.isFinite(partSize) && partSize > 0 ? Math.floor(partSize) : driver.partSizeBytes;
     effectivePartSize = Math.max(MIN_PART_SIZE, Math.min(MAX_PART_SIZE, effectivePartSize));
     const calculatedPartCount = partCount || Math.max(1, Math.ceil(fileSize / effectivePartSize));
@@ -460,6 +460,11 @@ export class TelegramMultipartOperations {
   /**
    * 被 /api/fs/multipart/upload-chunk 调用：
    * 把“浏览器分片”转成“Telegram 分片消息”，并写入 upload_parts
+   * 
+   * 性能优化（为了适应 Cloudflare Worker CPU 限制）：
+   * - 减少数据库查询次数
+   * - 使用快速路径（fast-path）跳过已上传分片的重复处理
+   * - 减少轮询等待时间
    */
   async proxyFrontendMultipartChunk(sessionRow, body, options = {}) {
     const driver = this.driver;
@@ -477,47 +482,72 @@ export class TelegramMultipartOperations {
 
     const partsRepo = new UploadPartsRepository(db, null);
 
-    // 服务器端幂等：
-    // 该分片在服务器已“成功上传”且 byte_range 一致，则直接跳过 Telegram sendDocument
+    // 服务器端幂等 + 快速路径：
+    // 该分片在服务器已"成功上传"且 byte_range 一致，则直接跳过 Telegram sendDocument
+    let existing = null;
     try {
-      const existing = await partsRepo.getPart(sessionRow.id, partNo);
+      existing = await partsRepo.getPart(sessionRow.id, partNo);
+    } catch (e) {
+      // 数据库查询失败时继续上传（保持鲁棒性）
+      if (process.env.DEBUG) {
+        console.error(`[TELEGRAM] 查询分片 ${partNo} 状态失败:`, e?.message || e);
+      }
+    }
+
+    if (existing) {
       const existingStatus = existing?.status || null;
       const existingProviderId = existing?.provider_part_id || null;
       const existingRangeMatches =
         existing?.byte_start === start &&
         existing?.byte_end === end;
 
+      // 快速路径 1：分片已完全上传，直接返回
       if (existingStatus === "uploaded" && existingProviderId && existingRangeMatches) {
         return { status: 200, done: false, skipped: true };
       }
 
-      // 并发/快速重试时：如果上一条请求已经“占坑上传中”，这里无需再发一条 TG。
-      // 短时间轮询等待（最多几秒），等它变成 uploaded 就直接跳过。
+      // 快速路径 2：分片正在上传中，仅轮询一次（不超过 500ms）
+      // 而不是长时间轮询，以减少 CPU 消耗
       if (existingStatus === "uploading" && existingRangeMatches) {
         const startMs = Date.now();
-        const maxWaitMs = 12_000;
-        while (Date.now() - startMs < maxWaitMs) {
+        const maxWaitMs = 500; // 只等待 500ms 而不是 3 秒
+        
+        // 只有在还有时间时才进行 sleep（留至少 100ms 用于查询）
+        const timeBeforeSleep = Date.now() - startMs;
+        if (timeBeforeSleep < maxWaitMs - 100) {
           try {
-            await driver._sleep(300);
+            await driver._sleep(Math.min(200, maxWaitMs - timeBeforeSleep - 50));
           } catch {
-            break;
+            // 被中止，继续上传
           }
-          const latest = await partsRepo.getPart(sessionRow.id, partNo);
-          const latestStatus = latest?.status || null;
-          const latestProviderId = latest?.provider_part_id || null;
-          const latestRangeMatches =
-            latest?.byte_start === start &&
-            latest?.byte_end === end;
+        }
 
-          if (latestStatus === "uploaded" && latestProviderId && latestRangeMatches) {
-            return { status: 200, done: false, skipped: true };
-          }
-          if (latestStatus === "error") {
-            break;
+        // 快速检查一次（如果还在超时窗口内）
+        const elapsedMs = Date.now() - startMs;
+        if (elapsedMs < maxWaitMs) {
+          try {
+            const latest = await partsRepo.getPart(sessionRow.id, partNo);
+            const latestStatus = latest?.status || null;
+            const latestProviderId = latest?.provider_part_id || null;
+            const latestRangeMatches =
+              latest?.byte_start === start &&
+              latest?.byte_end === end;
+
+            if (latestStatus === "uploaded" && latestProviderId && latestRangeMatches) {
+              return { status: 200, done: false, skipped: true };
+            }
+            if (latestStatus === "error") {
+              // 如果前次上传失败，继续新的上传尝试
+              existing = null;
+            }
+          } catch (e) {
+            // 查询失败，继续新的上传
+            if (process.env.DEBUG) {
+              console.error(`[TELEGRAM] 轮询检查分片 ${partNo} 失败:`, e?.message || e);
+            }
           }
         }
       }
-    } catch {
     }
 
     // 标记为 uploading，避免并发/重试时重复 sendDocument
